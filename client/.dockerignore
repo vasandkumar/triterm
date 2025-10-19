@@ -1,0 +1,53 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Development files
+*.test.ts
+*.test.tsx
+*.test.js
+*.test.jsx
+*.spec.ts
+*.spec.tsx
+test/
+coverage/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Environment
+.env.local
+.env.development
+.env.test
+
+# Build
+dist
+build
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Vite
+.vite
+vite.config.ts.timestamp-*
+
+# Other
+.npmrc

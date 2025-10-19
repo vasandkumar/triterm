@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#0f172a"/>
+  <g fill="#60a5fa">
+    <!-- Terminal icon -->
+    <rect x="96" y="96" width="320" height="320" rx="16" fill="none" stroke="#60a5fa" stroke-width="16"/>
+    <path d="M140 180 L200 240 L140 300" fill="none" stroke="#60a5fa" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="240" y1="280" x2="340" y2="280" stroke="#60a5fa" stroke-width="16" stroke-linecap="round"/>
+  </g>
+</svg>

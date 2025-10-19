@@ -1,0 +1,108 @@
+{
+  "name": "triterm",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Modern, secure web-based terminal manager with multi-user support",
+  "keywords": [
+    "terminal",
+    "web-terminal",
+    "xterm",
+    "pty",
+    "ssh",
+    "shell",
+    "websocket",
+    "multi-terminal"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vasandkumar/triterm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vasandkumar/triterm/issues"
+  },
+  "homepage": "https://github.com/vasandkumar/triterm#readme",
+  "bin": {
+    "triterm": "./bin/triterm.js"
+  },
+  "files": [
+    "bin/",
+    "client/",
+    "server/",
+    "scripts/",
+    "monitoring/",
+    "docker-compose.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.monitoring.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build": "npm run build --workspace=client",
+    "start": "npm run start --workspace=server",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "npm run test --workspace=client && npm run test --workspace=server",
+    "test:client": "npm run test --workspace=client",
+    "test:server": "npm run test --workspace=server",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:coverage": "npm run test:coverage --workspace=client && npm run test:coverage --workspace=server",
+    "lint": "eslint . --ext .js,.jsx",
+    "lint:fix": "eslint . --ext .js,.jsx --fix",
+    "format": "prettier --write \"**/*.{js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,json,md,css}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "@eslint/js": "^9.38.0",
+    "@playwright/test": "^1.56.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.8.1",
+    "@types/react": "^18.3.26",
+    "@types/react-dom": "^18.3.7",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/ui": "^3.2.4",
+    "concurrently": "^8.2.2",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "happy-dom": "^20.0.5",
+    "husky": "^9.1.7",
+    "jsdom": "^27.0.1",
+    "lint-staged": "^16.2.4",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.1",
+    "express-winston": "^4.2.0",
+    "inquirer": "^12.10.0",
+    "ora": "^9.0.0",
+    "winston": "^3.18.3",
+    "winston-daily-rotate-file": "^5.0.0"
+  }
+}

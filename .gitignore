@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.docker
+.env.monitoring
+.env.production
+
+# Build outputs
+dist/
+build/
+client/dist/
+server/dist/
+.vite/
+client/.vite/
+*.log
+logs/
+server/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Database
+*.db
+*.db-journal
+server/prisma/*.db
+server/prisma/*.db-journal
+server/generated/
+
+# Production & Backups
+backups/
+*.sql
+*.sql.gz
+recordings/
+server/recordings/
+
+# Docker
+.env.production.local
+
+# Internal Documentation
+docs/internal/
+
+# Test Results
+test-results/
+client/test-results/
+playwright-report/
+e2e/test-results/
+
+# Claude Code Local Settings
+.claude/settings.local.json
+
+# Client Dev Build
+client/dev-dist/

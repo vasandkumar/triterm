@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User roles enum
+enum UserRole {
+  ADMIN    // Full system access, user management
+  USER     // Standard user, own terminals only
+  VIEWER   // Read-only access to shared terminals
+}
+
+// User model for authentication
+model User {
+  id        String                @id @default(uuid())
+  email     String                @unique
+  username  String                @unique
+  password  String                // bcrypt hashed password
+  role      UserRole              @default(USER) // Role-based access control
+  isActive  Boolean               @default(true) // Account status
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  sessions  Session[]
+  auditLogs AuditLog[]
+  ownedShares   SharedTerminal[]  @relation("TerminalOwner")
+  sharedAccess  TerminalAccess[]
+}
+
+// Terminal session model for persistence and recovery
+model Session {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  terminalId     String    @unique // Unique terminal identifier
+  shell          String    // Shell command (bash, zsh, etc.)
+  cwd            String    // Current working directory
+  cols           Int       @default(80)  // Terminal columns
+  rows           Int       @default(24)  // Terminal rows
+  active         Boolean   @default(true) // Is session active
+  socketId       String?   // Current socket ID (if connected)
+  createdAt      DateTime  @default(now())
+  lastActivityAt DateTime  @default(now()) // Last activity timestamp
+  expiresAt      DateTime? // Session expiration (optional)
+
+  @@index([userId])
+  @@index([terminalId])
+  @@index([active])
+}
+
+// Audit log for security and compliance
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String   // Action performed (create_terminal, delete_terminal, share_terminal, etc.)
+  resource    String   // Resource affected (terminal_id, user_id, etc.)
+  metadata    String?  // Additional JSON metadata
+  ipAddress   String?  // IP address of request
+  userAgent   String?  // User agent string
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// Shared terminals for collaboration
+model SharedTerminal {
+  id          String           @id @default(uuid())
+  terminalId  String           @unique // Terminal being shared
+  ownerId     String           // User who owns the terminal
+  owner       User             @relation("TerminalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  expiresAt   DateTime?        // Optional expiration
+  accessGrants TerminalAccess[]
+
+  @@index([terminalId])
+  @@index([ownerId])
+}
+
+// Junction table for terminal access permissions
+model TerminalAccess {
+  id               String         @id @default(uuid())
+  sharedTerminalId String
+  sharedTerminal   SharedTerminal @relation(fields: [sharedTerminalId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission       String         @default("VIEW") // VIEW or CONTROL
+  createdAt        DateTime       @default(now())
+
+  @@unique([sharedTerminalId, userId])
+  @@index([userId])
+}
