@@ -81,8 +81,6 @@ export function ResizableTerminalLayout({
 
   // For auto mode, use uniform grid with fixed heights
   if (layoutMode === 'auto') {
-    const rows = Math.ceil(terminalIds.length / gridColumns);
-
     return (
       <div className="h-full w-full overflow-auto p-2">
         <div
