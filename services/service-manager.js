@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -74,15 +74,15 @@ class ServiceManager {
 
     switch (this.platform) {
       case 'linux':
-        this.runCommand('sudo systemctl start triterm');
+        this.runCommand('sudo', ['systemctl', 'start', 'triterm']);
         console.log('✅ Service started successfully');
         break;
       case 'darwin':
-        this.runCommand('launchctl load ~/Library/LaunchAgents/com.triterm.server.plist');
+        this.runCommand('launchctl', ['load', '~/Library/LaunchAgents/com.triterm.server.plist']);
         console.log('✅ Service started successfully');
         break;
       case 'win32':
-        this.runCommand('net start "TriTerm Server"');
+        this.runCommand('net', ['start', 'TriTerm Server']);
         console.log('✅ Service started successfully');
         break;
     }
@@ -360,7 +360,7 @@ svc.install();
 
     // Run the installer
     try {
-      this.runCommand(`node ${installerPath}`);
+      this.runCommand('node', [installerPath]);
 
       // Clean up installer script
       fs.unlinkSync(installerPath);
@@ -425,7 +425,7 @@ svc.uninstall();
     fs.writeFileSync(uninstallerPath, uninstallerScript);
 
     try {
-      this.runCommand(`node ${uninstallerPath}`);
+      this.runCommand('node', [uninstallerPath]);
 
       // Clean up uninstaller script
       fs.unlinkSync(uninstallerPath);
@@ -446,9 +446,9 @@ svc.uninstall();
       .replace(/{{LOG_DIR}}/g, this.config.logDir);
   }
 
-  runCommand(command, returnOutput = false) {
+  runCommand(command, args = [], returnOutput = false) {
     try {
-      const result = execSync(command, {
+      const result = execFileSync(command, args, {
         encoding: 'utf8',
         stdio: returnOutput ? 'pipe' : 'inherit',
       });
@@ -457,7 +457,7 @@ svc.uninstall();
       if (returnOutput) {
         throw error;
       }
-      throw new Error(`Command failed: ${command}\n${error.message}`);
+      throw new Error(`Command failed: ${command} ${args.join(' ')}\n${error.message}`);
     }
   }
 
