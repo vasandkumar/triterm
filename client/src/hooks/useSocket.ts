@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getAccessToken } from '../lib/tokenStorage';
+import { getDeviceInfo } from '../lib/deviceId';
 
 // Automatically determine the server URL
 function getServerUrl(): string {
@@ -39,9 +40,13 @@ export function useSocket(url?: string): UseSocketReturn {
     // Get access token for authentication
     const token = getAccessToken();
 
-    console.log('Creating socket connection to:', serverUrl);
+    // Get device information for multi-device support
+    const { deviceId, deviceName } = getDeviceInfo();
 
-    // Create socket connection with auth token
+    console.log('Creating socket connection to:', serverUrl);
+    console.log('Device info:', { deviceId, deviceName });
+
+    // Create socket connection with auth token and device info
     socketRef.current = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -50,6 +55,8 @@ export function useSocket(url?: string): UseSocketReturn {
       reconnectionAttempts: Infinity,
       auth: {
         token, // Send token for server authentication
+        deviceId, // Send device ID for multi-device tracking
+        deviceName, // Send device name for user-friendly display
       },
     });
 

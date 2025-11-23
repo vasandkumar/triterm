@@ -8,6 +8,7 @@ import { registerSchema, loginSchema, refreshTokenSchema } from '../lib/validati
 import { oauthService } from '../lib/oauthProviders.js';
 import logger from '../config/logger.js';
 import { logAuditEvent, AuditAction, getClientIp, getUserAgent } from '../lib/auditLogger.js';
+import { encryptToken, decryptToken } from '../lib/encryption.js';
 
 const router = Router();
 
@@ -472,8 +473,8 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
             userId: user.id,
             provider,
             providerUserId: oauthUser.id,
-            accessToken: tokenData.access_token,
-            refreshToken: tokenData.refresh_token,
+            accessToken: encryptToken(tokenData.access_token),
+            refreshToken: tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
           },
         });
 
@@ -490,8 +491,8 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
             providerUserId: oauthUser.id,
           },
           data: {
-            accessToken: tokenData.access_token,
-            refreshToken: tokenData.refresh_token,
+            accessToken: encryptToken(tokenData.access_token),
+            refreshToken: tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
           },
         });
       }
@@ -510,8 +511,8 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
             create: {
               provider,
               providerUserId: oauthUser.id,
-              accessToken: tokenData.access_token,
-              refreshToken: tokenData.refresh_token,
+              accessToken: encryptToken(tokenData.access_token),
+              refreshToken: tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
             },
           },
         },

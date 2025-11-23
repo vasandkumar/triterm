@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Request } from 'express';
 import logger from '../config/logger.js';
+import { isValidIP } from './shareValidation.js';
 
 const prisma = new PrismaClient();
 
@@ -35,6 +36,11 @@ export enum AuditAction {
   TERMINAL_UNSHARE = 'terminal.unshare',
   TERMINAL_ACCESS_GRANT = 'terminal.access_grant',
   TERMINAL_ACCESS_REVOKE = 'terminal.access_revoke',
+  SHARE_TERMINAL = 'terminal.share',
+  APPROVE_SHARE_REQUEST = 'share.approve',
+  REJECT_SHARE_REQUEST = 'share.reject',
+  BLOCK_IP = 'share.block_ip',
+  DEACTIVATE_SHARE_LINK = 'share.deactivate',
 
   // User Management (Admin only)
   USER_CREATE = 'user.create',
@@ -84,13 +90,22 @@ export async function logAuditEvent(data: AuditLogData): Promise<void> {
 
 /**
  * Extract IP address from request
+ * Only trusts X-Forwarded-For in production environment
  */
 export function getClientIp(req: Request): string | undefined {
-  return (
-    (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
-    req.headers['x-real-ip'] as string ||
-    req.socket.remoteAddress
-  );
+  const trustProxy = process.env.NODE_ENV === 'production';
+
+  if (trustProxy) {
+    // In production behind a load balancer, trust X-Forwarded-For
+    const forwarded = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim();
+    if (forwarded && isValidIP(forwarded)) {
+      return forwarded;
+    }
+  }
+
+  // Fallback to direct connection IP
+  const directIp = req.socket.remoteAddress;
+  return directIp && isValidIP(directIp) ? directIp : 'unknown';
 }
 
 /**
@@ -113,7 +128,7 @@ export function auditLog(action: AuditAction, getResourceId: (req: any) => strin
 
     try {
       await logAuditEvent({
-        userId: req.user.id,
+        userId: req.user.userId,
         action,
         resource: getResourceId(req),
         ipAddress: getClientIp(req),

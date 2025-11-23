@@ -266,6 +266,66 @@ program
   });
 
 /**
+ * Service command - Manage TriTerm as a system service
+ */
+program
+  .command('service <action>')
+  .description('Manage TriTerm as a system service (install/uninstall/start/stop/status)')
+  .action(async (action) => {
+    const { default: ServiceManager } = await import('../services/service-manager.js');
+    const manager = new ServiceManager();
+
+    console.log(chalk.cyan.bold(`\n🔧 TriTerm Service Manager - ${action}\n`));
+
+    try {
+      switch (action) {
+        case 'install':
+          await manager.promptConfig();
+          await manager.install();
+          break;
+        case 'uninstall':
+        case 'remove':
+          await manager.uninstall();
+          break;
+        case 'start':
+          await manager.start();
+          break;
+        case 'stop':
+          await manager.stop();
+          break;
+        case 'restart':
+          await manager.stop();
+          await manager.start();
+          break;
+        case 'status':
+          await manager.status();
+          break;
+        default:
+          console.log(chalk.red(`Unknown service action: ${action}`));
+          console.log('\nAvailable actions:');
+          console.log('  install   - Install TriTerm as a system service');
+          console.log('  uninstall - Remove the system service');
+          console.log('  start     - Start the service');
+          console.log('  stop      - Stop the service');
+          console.log('  restart   - Restart the service');
+          console.log('  status    - Check service status\n');
+          process.exit(1);
+      }
+    } catch (error) {
+      console.error(chalk.red(`\n❌ Error: ${error.message}\n`));
+
+      // Provide platform-specific help
+      if (error.message.includes('Administrator')) {
+        console.log(chalk.yellow('💡 On Windows, run this command in an Administrator terminal\n'));
+      } else if (error.message.includes('sudo')) {
+        console.log(chalk.yellow('💡 This command requires sudo privileges\n'));
+      }
+
+      process.exit(1);
+    }
+  });
+
+/**
  * Info command - Display system information
  */
 program

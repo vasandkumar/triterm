@@ -42,7 +42,7 @@ router.post('/:terminalId/share', async (req: AuthenticatedRequest, res: Respons
     }
 
     // Check if user has permission to share this terminal
-    if (session.userId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+    if (session.userId !== req.user.userId && req.user.role !== UserRole.ADMIN) {
       return res.status(403).json({ error: 'Only the terminal owner or admin can share it' });
     }
 
@@ -98,7 +98,7 @@ router.post('/:terminalId/share', async (req: AuthenticatedRequest, res: Respons
 
     // Audit log
     await logAuditEvent({
-      userId: req.user.id,
+      userId: req.user.userId,
       action: AuditAction.TERMINAL_SHARE,
       resource: terminalId,
       metadata: {
@@ -111,7 +111,7 @@ router.post('/:terminalId/share', async (req: AuthenticatedRequest, res: Respons
 
     logger.info('Terminal shared', {
       terminalId,
-      ownerId: req.user.id,
+      ownerId: req.user.userId,
       sharedWith: users.map((u) => u.id),
       permission: validatedData.permission,
     });
@@ -158,7 +158,7 @@ router.delete('/:terminalId/share/:userId', async (req: AuthenticatedRequest, re
     }
 
     // Check if user has permission to revoke access
-    if (sharedTerminal.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+    if (sharedTerminal.ownerId !== req.user.userId && req.user.role !== UserRole.ADMIN) {
       return res.status(403).json({ error: 'Only the terminal owner or admin can revoke access' });
     }
 
@@ -176,7 +176,7 @@ router.delete('/:terminalId/share/:userId', async (req: AuthenticatedRequest, re
 
     // Audit log
     await logAuditEvent({
-      userId: req.user.id,
+      userId: req.user.userId,
       action: AuditAction.TERMINAL_ACCESS_REVOKE,
       resource: terminalId,
       metadata: { revokedUserId: userId },
@@ -186,7 +186,7 @@ router.delete('/:terminalId/share/:userId', async (req: AuthenticatedRequest, re
 
     logger.info('Terminal access revoked', {
       terminalId,
-      ownerId: req.user.id,
+      ownerId: req.user.userId,
       revokedUserId: userId,
     });
 
@@ -224,7 +224,7 @@ router.get('/shared', async (req: AuthenticatedRequest, res: Response) => {
 
     // Get all terminal access grants for this user
     const accessGrants = await prisma.terminalAccess.findMany({
-      where: { userId: req.user.id },
+      where: { userId: req.user.userId },
       include: {
         sharedTerminal: {
           include: {
@@ -314,9 +314,9 @@ router.get('/:terminalId/collaborators', async (req: AuthenticatedRequest, res: 
 
     // Check if user has permission to view collaborators
     const hasAccess =
-      sharedTerminal.ownerId === req.user.id ||
+      sharedTerminal.ownerId === req.user.userId ||
       req.user.role === UserRole.ADMIN ||
-      sharedTerminal.accessGrants.some((grant) => grant.userId === req.user!.id);
+      sharedTerminal.accessGrants.some((grant) => grant.userId === req.user!.userId);
 
     if (!hasAccess) {
       return res.status(403).json({ error: 'You do not have access to this terminal' });
@@ -365,7 +365,7 @@ router.patch('/:terminalId/share/:userId', async (req: AuthenticatedRequest, res
     }
 
     // Check if user has permission to update permissions
-    if (sharedTerminal.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+    if (sharedTerminal.ownerId !== req.user.userId && req.user.role !== UserRole.ADMIN) {
       return res.status(403).json({ error: 'Only the terminal owner or admin can update permissions' });
     }
 
@@ -386,7 +386,7 @@ router.patch('/:terminalId/share/:userId', async (req: AuthenticatedRequest, res
 
     // Audit log
     await logAuditEvent({
-      userId: req.user.id,
+      userId: req.user.userId,
       action: AuditAction.TERMINAL_ACCESS_GRANT,
       resource: terminalId,
       metadata: {
@@ -399,7 +399,7 @@ router.patch('/:terminalId/share/:userId', async (req: AuthenticatedRequest, res
 
     logger.info('Terminal permission updated', {
       terminalId,
-      ownerId: req.user.id,
+      ownerId: req.user.userId,
       targetUserId: userId,
       newPermission: validatedData.permission,
     });
@@ -440,7 +440,7 @@ router.delete('/:terminalId/share', async (req: AuthenticatedRequest, res: Respo
     }
 
     // Check if user has permission to unshare
-    if (sharedTerminal.ownerId !== req.user.id && req.user.role !== UserRole.ADMIN) {
+    if (sharedTerminal.ownerId !== req.user.userId && req.user.role !== UserRole.ADMIN) {
       return res.status(403).json({ error: 'Only the terminal owner or admin can unshare the terminal' });
     }
 
@@ -451,7 +451,7 @@ router.delete('/:terminalId/share', async (req: AuthenticatedRequest, res: Respo
 
     // Audit log
     await logAuditEvent({
-      userId: req.user.id,
+      userId: req.user.userId,
       action: AuditAction.TERMINAL_UNSHARE,
       resource: terminalId,
       ipAddress: getClientIp(req),
@@ -460,7 +460,7 @@ router.delete('/:terminalId/share', async (req: AuthenticatedRequest, res: Respo
 
     logger.info('Terminal unshared', {
       terminalId,
-      ownerId: req.user.id,
+      ownerId: req.user.userId,
     });
 
     return res.status(200).json({

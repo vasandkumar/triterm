@@ -10,7 +10,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --primary: 206 100% 50%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -22,7 +22,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 206 100% 50%;
     --radius: 0.5rem;
   }
 
@@ -33,7 +33,7 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
+    --primary: 199 89% 48%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -45,7 +45,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 199 89% 48%;
   }
 }
 
@@ -78,6 +78,78 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.6);
+}
+
+/* XTerm.js - Fix scrollbar click issue */
+.xterm {
+  position: relative;
+}
+
+.xterm .xterm-viewport {
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  width: 100% !important;
+  position: absolute !important;
+  right: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+}
+
+/* Use pointer-events approach: let clicks pass through to scrollbar */
+.xterm .xterm-screen {
+  pointer-events: none !important;
+  position: relative !important;
+}
+
+/* Re-enable pointer events only on content that needs interaction */
+.xterm .xterm-screen canvas,
+.xterm .xterm-rows,
+.xterm .xterm-rows > div {
+  pointer-events: auto !important;
+}
+
+/* Constrain canvas and content to leave scrollbar space */
+.xterm .xterm-screen canvas {
+  width: calc(100% - 40px) !important;
+  max-width: calc(100% - 40px) !important;
+}
+
+.xterm .xterm-rows {
+  width: calc(100% - 40px) !important;
+  max-width: calc(100% - 40px) !important;
+}
+
+/* Helper textarea for input - constrain it */
+.xterm .xterm-helper-textarea {
+  width: calc(100% - 40px) !important;
+  max-width: calc(100% - 40px) !important;
+  pointer-events: auto !important;
+}
+
+/* Style the scrollbar for better visibility and clickability */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 20px !important;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.5);
+  border-radius: 10px;
+  border: 3px solid hsl(var(--muted));
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.7);
+}
+
+/* Firefox scrollbar */
+.xterm .xterm-viewport {
+  scrollbar-width: auto !important;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.5) hsl(var(--muted));
 }
 
 /* React Resizable Panels - Custom resize handle styles */

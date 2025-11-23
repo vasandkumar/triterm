@@ -61,6 +61,23 @@ export interface SystemStats {
   };
 }
 
+// Helper function to get CSRF token from cookie
+function getCsrfToken(): string | null {
+  const name = 'XSRF-TOKEN=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const ca = decodedCookie.split(';');
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) === ' ') {
+      c = c.substring(1);
+    }
+    if (c.indexOf(name) === 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return null;
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = getAccessToken();
 
@@ -68,13 +85,23 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     throw new Error('Authentication required');
   }
 
-  const headers = {
+  const csrfToken = getCsrfToken();
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
 
-  const response = await fetch(url, { ...options, headers });
+  // Add CSRF token for state-changing requests
+  if (csrfToken) {
+    headers['x-xsrf-token'] = csrfToken;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include', // Send cookies with requests
+  });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));

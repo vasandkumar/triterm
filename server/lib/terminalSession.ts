@@ -3,7 +3,7 @@ import logger from '../config/logger.js';
 
 export interface TerminalSessionData {
   terminalId: string;
-  userId: string;
+  userId?: string; // Optional to support unauthenticated terminals
   shell: string;
   cwd: string;
   cols: number;

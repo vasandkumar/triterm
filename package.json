@@ -47,6 +47,7 @@
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "build": "npm run build --workspace=client",
+    "build:server": "npm run build --workspace=server",
     "start": "npm run start --workspace=server",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "npm run test --workspace=client && npm run test --workspace=server",
@@ -69,6 +70,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.8.1",
     "@types/react": "^18.3.26",
     "@types/react-dom": "^18.3.7",
@@ -97,10 +99,13 @@
     ]
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "chalk": "^5.6.2",
     "commander": "^14.0.1",
+    "cookie-parser": "^1.4.7",
     "express-winston": "^4.2.0",
     "inquirer": "^12.10.0",
+    "isomorphic-dompurify": "^2.32.0",
     "ora": "^9.0.0",
     "winston": "^3.18.3",
     "winston-daily-rotate-file": "^5.0.0"
