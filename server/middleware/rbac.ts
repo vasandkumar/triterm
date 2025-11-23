@@ -1,14 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '@prisma/client';
+import { JWTPayload } from '../lib/jwt.js';
 
 // Extend Express Request to include user info
 export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    username: string;
-    role: UserRole;
-  };
+  user?: JWTPayload;
 }
 
 /**
@@ -55,7 +51,7 @@ export function requireAdminOrOwner(getUserId: (req: AuthenticatedRequest) => st
     }
 
     const resourceUserId = getUserId(req);
-    const isOwner = req.user.id === resourceUserId;
+    const isOwner = req.user.userId === resourceUserId;
     const isAdmin = req.user.role === UserRole.ADMIN;
 
     if (!isOwner && !isAdmin) {

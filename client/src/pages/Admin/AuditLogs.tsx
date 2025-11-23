@@ -25,12 +25,12 @@ const ACTION_COLORS: Record<string, string> = {
   LOGIN: 'bg-green-500/10 text-green-600 dark:text-green-400',
   LOGOUT: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
   REGISTER: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  CREATE_SESSION: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  CREATE_SESSION: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
   CLOSE_SESSION: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
   UPDATE_USER: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
   DELETE_USER: 'bg-red-500/10 text-red-600 dark:text-red-400',
   START_RECORDING: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-  STOP_RECORDING: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+  STOP_RECORDING: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
 };
 
 export function AuditLogs() {

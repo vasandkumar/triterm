@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.triterm.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{NODE_PATH}}</string>
+        <string>{{INSTALL_DIR}}/server/index.js</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <key>PORT</key>
+        <string>{{PORT}}</string>
+        <key>DATABASE_URL</key>
+        <string>{{DATABASE_URL}}</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>{{INSTALL_DIR}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>{{LOG_DIR}}/triterm.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{LOG_DIR}}/triterm-error.log</string>
+
+    <key>UserName</key>
+    <string>{{USER}}</string>
+
+    <key>GroupName</key>
+    <string>{{GROUP}}</string>
+</dict>
+</plist>

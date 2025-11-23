@@ -1,0 +1,28 @@
+[Unit]
+Description=TriTerm Multi-Terminal Server
+Documentation=https://github.com/yourusername/triterm
+After=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{INSTALL_DIR}}
+Environment="NODE_ENV=production"
+Environment="PORT={{PORT}}"
+Environment="DATABASE_URL={{DATABASE_URL}}"
+ExecStart={{NODE_PATH}} {{INSTALL_DIR}}/server/index.js
+Restart=always
+RestartSec=10
+StandardOutput=append:{{LOG_DIR}}/triterm.log
+StandardError=append:{{LOG_DIR}}/triterm-error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{DATA_DIR}} {{LOG_DIR}}
+
+[Install]
+WantedBy=multi-user.target

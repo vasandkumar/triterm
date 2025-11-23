@@ -17,6 +17,22 @@ enum UserRole {
   VIEWER   // Read-only access to shared terminals
 }
 
+// Connection status for external sharing
+enum ConnectionStatus {
+  PENDING   // Waiting for approval
+  APPROVED  // Approved by owner
+  REJECTED  // Rejected by owner
+  BLOCKED   // IP blocked
+  EXPIRED   // Request expired
+}
+
+// Approval mode for share links
+enum ApprovalMode {
+  MANUAL         // Owner must manually approve each connection
+  AUTO           // Auto-approve all connections
+  PASSWORD_ONLY  // Only password required, no approval needed
+}
+
 // User model for authentication
 model User {
   id        String                @id @default(uuid())
@@ -35,23 +51,42 @@ model User {
 
 // Terminal session model for persistence and recovery
 model Session {
-  id             String    @id @default(uuid())
-  userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  terminalId     String    @unique // Unique terminal identifier
-  shell          String    // Shell command (bash, zsh, etc.)
-  cwd            String    // Current working directory
-  cols           Int       @default(80)  // Terminal columns
-  rows           Int       @default(24)  // Terminal rows
-  active         Boolean   @default(true) // Is session active
-  socketId       String?   // Current socket ID (if connected)
-  createdAt      DateTime  @default(now())
-  lastActivityAt DateTime  @default(now()) // Last activity timestamp
-  expiresAt      DateTime? // Session expiration (optional)
+  id             String           @id @default(uuid())
+  userId         String?
+  user           User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  terminalId     String           @unique // Unique terminal identifier
+  shell          String           // Shell command (bash, zsh, etc.)
+  cwd            String           // Current working directory
+  cols           Int              @default(80)  // Terminal columns
+  rows           Int              @default(24)  // Terminal rows
+  active         Boolean          @default(true) // Is session active
+  socketId       String?          // Current socket ID (if connected) - DEPRECATED: Use sockets relation
+  primarySocketId String?         // Socket ID of primary control device
+  createdAt      DateTime         @default(now())
+  lastActivityAt DateTime         @default(now()) // Last activity timestamp
+  expiresAt      DateTime?        // Session expiration (optional)
+  sockets        TerminalSocket[] // Multi-device support: multiple connected sockets
 
   @@index([userId])
   @@index([terminalId])
   @@index([active])
+}
+
+// Multi-device support: tracks multiple socket connections per terminal
+model TerminalSocket {
+  id          String   @id @default(uuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  socketId    String   // Socket.IO connection ID
+  deviceId    String?  // Client-generated device identifier
+  deviceName  String?  // User-friendly device name
+  connectedAt DateTime @default(now())
+  lastPingAt  DateTime @default(now()) // Last keepalive ping
+
+  @@unique([sessionId, socketId])
+  @@index([sessionId])
+  @@index([socketId])
+  @@index([deviceId])
 }
 
 // Audit log for security and compliance
@@ -97,4 +132,131 @@ model TerminalAccess {
 
   @@unique([sharedTerminalId, userId])
   @@index([userId])
+}
+
+// External share links for public terminal sharing
+model SharedLink {
+  id                 String               @id @default(uuid())
+  terminalId         String               // Terminal being shared
+  sessionId          String               // Session ID for validation
+  shareCode          String               @unique // Short code for URL (e.g., "abc123")
+
+  // Name Collection Settings
+  requireName        Boolean              @default(true)
+  requireEmail       Boolean              @default(false)
+  requireReason      Boolean              @default(false)
+  nameMinLength      Int                  @default(2)
+  nameMaxLength      Int                  @default(50)
+  allowAnonymous     Boolean              @default(false)
+
+  // Security Settings
+  approvalMode       ApprovalMode         @default(MANUAL)
+  requireApproval    Boolean              @default(true)
+  maxConcurrentUsers Int                  @default(5)
+  maxTotalUses       Int?                 @default(50)
+  currentUses        Int                  @default(0)
+  requirePassword    Boolean              @default(false)
+  passwordHash       String?              // bcrypt hash if password required
+  allowedIPs         String?              // JSON array of allowed IPs
+  blockedIPs         String?              // JSON array of blocked IPs
+
+  // Permissions
+  permission         String               @default("VIEW") // VIEW or CONTROL
+
+  // Metadata
+  createdBy          String               // User ID of creator
+  createdAt          DateTime             @default(now())
+  expiresAt          DateTime             // Expiration timestamp
+  active             Boolean              @default(true)
+
+  // Relations
+  pendingConnections PendingConnection[]
+  activeConnections  ActiveConnection[]
+  auditLogs          ShareAuditLog[]
+
+  @@index([shareCode])
+  @@index([terminalId])
+  @@index([sessionId])
+  @@index([createdBy])
+  @@index([active])
+}
+
+// Pending connection requests awaiting approval
+model PendingConnection {
+  id            String           @id @default(uuid())
+  sharedLinkId  String
+  sharedLink    SharedLink       @relation(fields: [sharedLinkId], references: [id], onDelete: Cascade)
+
+  // User-Provided Information
+  name          String           // Required: User's name
+  email         String?          // Optional: Email address
+  reason        String?          // Optional: Reason for access
+  organization  String?          // Optional: Organization/Company
+
+  // System-Detected Information
+  ipAddress     String           // IP address
+  userAgent     String           // Browser user agent
+  geoLocation   String?          // Geographic location (if available)
+  deviceInfo    String?          // Device fingerprint
+
+  // Status and Response
+  status        ConnectionStatus @default(PENDING)
+  requestedAt   DateTime         @default(now())
+  respondedAt   DateTime?
+  respondedBy   String?          // User ID who approved/rejected
+  rejectionReason String?        // Reason for rejection
+
+  // Connection tracking
+  socketId      String?          // Assigned after approval
+
+  @@index([sharedLinkId, status])
+  @@index([email])
+  @@index([ipAddress])
+  @@index([status])
+}
+
+// Active external connections
+model ActiveConnection {
+  id               String     @id @default(uuid())
+  sharedLinkId     String
+  sharedLink       SharedLink @relation(fields: [sharedLinkId], references: [id], onDelete: Cascade)
+
+  // Connection Info
+  connectionId     String     @unique // From approved PendingConnection
+  socketId         String     @unique // Current socket ID
+
+  // User Info
+  name             String
+  email            String?
+  organization     String?
+  ipAddress        String
+
+  // Timestamps
+  connectedAt      DateTime   @default(now())
+  lastActivityAt   DateTime   @default(now())
+  disconnectedAt   DateTime?
+
+  @@index([sharedLinkId])
+  @@index([socketId])
+  @@index([ipAddress])
+}
+
+// Audit log for share link security
+model ShareAuditLog {
+  id           String     @id @default(uuid())
+  sharedLinkId String
+  sharedLink   SharedLink @relation(fields: [sharedLinkId], references: [id], onDelete: Cascade)
+
+  action       String     // JOIN_REQUEST, APPROVED, REJECTED, BLOCKED, CONNECTED, DISCONNECTED
+  actorId      String?    // User ID if authenticated action
+  targetName   String?    // Name of external user
+  targetEmail  String?    // Email of external user
+  ipAddress    String
+  metadata     String?    // Additional JSON data
+  createdAt    DateTime   @default(now())
+
+  @@index([sharedLinkId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([ipAddress])
 }
