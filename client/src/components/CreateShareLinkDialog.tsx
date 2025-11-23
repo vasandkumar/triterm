@@ -85,7 +85,6 @@ export function CreateShareLinkDialog({
 
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
-  const [shareCode, setShareCode] = useState('');
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +117,6 @@ export function CreateShareLinkDialog({
         return;
       }
 
-      setShareCode(data.shareCode);
       const fullUrl = `${window.location.origin}/share/${data.shareCode}`;
       setShareUrl(fullUrl);
       setCreated(true);

@@ -145,7 +145,7 @@ export function SharedTerminalViewer({ shareCode }: SharedTerminalViewerProps) {
       });
     });
 
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', () => {
       setError('Failed to connect to server');
       setLoading(false);
     });

@@ -11,7 +11,7 @@
 
 import { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
-import { X, Users, Clock, Shield, Trash2, UserX, CheckCircle, XCircle, Eye, Edit3 } from 'lucide-react';
+import { Users, Clock, Trash2, UserX, CheckCircle, XCircle, Eye, Edit3 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Badge } from './ui/badge';
@@ -60,7 +60,6 @@ interface ShareManagementDialogProps {
 
 export function ShareManagementDialog({
   socket,
-  terminalId,
   shareCode,
   open,
   onClose,

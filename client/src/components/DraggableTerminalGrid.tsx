@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Responsive, WidthProvider, Layout } from 'react-grid-layout';
 import { Terminal } from './Terminal';
 import type { Socket } from 'socket.io-client';
@@ -51,21 +51,21 @@ export function DraggableTerminalGrid({
     if (count === 0) return [];
 
     // Calculate optimal grid dimensions
-    let cols, rows;
+    let cols;
     if (count === 1) {
-      cols = 1; rows = 1;
+      cols = 1;
     } else if (count === 2) {
-      cols = 2; rows = 1;
+      cols = 2;
     } else if (count === 3) {
-      cols = 3; rows = 1;
+      cols = 3;
     } else if (count === 4) {
-      cols = 2; rows = 2;
+      cols = 2;
     } else if (count <= 6) {
-      cols = 3; rows = 2;
+      cols = 3;
     } else if (count <= 9) {
-      cols = 3; rows = 3;
+      cols = 3;
     } else {
-      cols = 4; rows = Math.ceil(count / 4);
+      cols = 4;
     }
 
     const cellWidth = 12 / cols; // 12-column grid

@@ -137,7 +137,7 @@ class ServiceManager {
           break;
         }
       }
-    } catch (error) {
+    } catch {
       console.log('Service is not installed or not running');
     }
   }
@@ -167,7 +167,7 @@ class ServiceManager {
     console.log('Building server...');
     try {
       this.runCommand('npm run build:server');
-    } catch (error) {
+    } catch {
       // If build fails, we'll use tsx to run TypeScript directly
       console.log('Note: Server will run with tsx for TypeScript support');
     }
@@ -217,7 +217,7 @@ class ServiceManager {
     console.log('Building server...');
     try {
       this.runCommand('npm run build:server');
-    } catch (error) {
+    } catch {
       // If build fails, we'll use tsx to run TypeScript directly
       console.log('Note: Server will run with tsx for TypeScript support');
     }
@@ -285,7 +285,7 @@ class ServiceManager {
     console.log('Building server...');
     try {
       this.runCommand('npm run build:server');
-    } catch (error) {
+    } catch {
       // If build fails, we'll use tsx to run TypeScript directly
       console.log('Note: Server will run with tsx for TypeScript support');
     }

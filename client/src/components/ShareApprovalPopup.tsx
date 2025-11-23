@@ -50,7 +50,7 @@ interface ShareApprovalPopupProps {
   onClose: () => void;
 }
 
-export function ShareApprovalPopup({ socket, shareCode, terminalId, onClose }: ShareApprovalPopupProps) {
+export function ShareApprovalPopup({ socket, shareCode, onClose }: ShareApprovalPopupProps) {
   const [pendingConnections, setPendingConnections] = useState<PendingConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null);

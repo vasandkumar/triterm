@@ -1,5 +1,4 @@
 // Windows Service wrapper for TriTerm
-const path = require('path');
 
 // This template is used by the service installer
 module.exports = {
