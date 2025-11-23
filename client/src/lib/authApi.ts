@@ -26,15 +26,40 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Send cookies with requests
 });
 
-// Request interceptor to add auth token
+// Helper function to get CSRF token from cookie
+function getCsrfToken(): string | null {
+  const name = 'XSRF-TOKEN=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const ca = decodedCookie.split(';');
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) === ' ') {
+      c = c.substring(1);
+    }
+    if (c.indexOf(name) === 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return null;
+}
+
+// Request interceptor to add auth token and CSRF token
 api.interceptors.request.use(
   (config) => {
     const token = getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Add CSRF token for state-changing requests
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      config.headers['x-xsrf-token'] = csrfToken;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

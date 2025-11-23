@@ -56,6 +56,7 @@ server/recordings/
 .env.production.local
 
 # Internal Documentation
+docs
 docs/internal/
 
 # Test Results

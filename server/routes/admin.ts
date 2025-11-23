@@ -51,7 +51,7 @@ router.patch('/users/:id', async (req, res) => {
     }
 
     // Prevent changing own role
-    if (id === req.user?.id) {
+    if (id === req.user?.userId) {
       return res.status(403).json({ error: 'Cannot change your own role' });
     }
 
@@ -71,7 +71,7 @@ router.patch('/users/:id', async (req, res) => {
 
     // Log the action
     await logAuditEvent({
-      userId: req.user!.id,
+      userId: req.user!.userId,
       action: 'UPDATE_USER',
       resource: `user:${id}`,
       ipAddress: req.ip || null,
@@ -102,7 +102,7 @@ router.delete('/users/:id', async (req, res) => {
     const { id } = req.params;
 
     // Prevent deleting own account
-    if (id === req.user?.id) {
+    if (id === req.user?.userId) {
       return res.status(403).json({ error: 'Cannot delete your own account' });
     }
 
@@ -123,7 +123,7 @@ router.delete('/users/:id', async (req, res) => {
 
     // Log the action
     await logAuditEvent({
-      userId: req.user!.id,
+      userId: req.user!.userId,
       action: 'DELETE_USER',
       resource: `user:${id}`,
       ipAddress: req.ip || null,

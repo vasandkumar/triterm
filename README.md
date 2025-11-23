@@ -135,6 +135,15 @@ npx triterm migrate            # Run database migrations
 npx triterm migrate --reset    # Reset database (WARNING: deletes data)
 npx triterm build              # Build client for production
 npx triterm info               # Display system information
+
+# System Service Management (Run as background service)
+npx triterm service install    # Install as system service
+npx triterm service uninstall  # Remove system service
+npx triterm service start      # Start the service
+npx triterm service stop       # Stop the service
+npx triterm service restart    # Restart the service
+npx triterm service status     # Check service status
+
 npx triterm --help             # Show all commands
 ```
 
@@ -259,6 +268,83 @@ cd server
 npx prisma generate
 npx prisma migrate deploy
 ```
+
+## 🚦 Running as a System Service
+
+TriTerm can be installed as a system service for production deployment, allowing it to run in the background and start automatically on system boot.
+
+### Supported Platforms
+
+- **Linux** (systemd) - Ubuntu, Debian, RHEL, CentOS, etc.
+- **macOS** (launchd) - macOS 10.10+
+- **Windows** (Windows Service) - Windows 7+
+
+### Installing the Service
+
+```bash
+# Interactive installation
+npx triterm service install
+```
+
+This will prompt you for:
+
+- Port number (default: 3000)
+- User to run as (Linux/macOS)
+- Data directory location
+- Log directory location
+
+### Service Management Commands
+
+```bash
+# Start the service
+npx triterm service start
+
+# Stop the service
+npx triterm service stop
+
+# Restart the service
+npx triterm service restart
+
+# Check service status
+npx triterm service status
+
+# Uninstall the service
+npx triterm service uninstall
+```
+
+### Platform-Specific Notes
+
+#### Linux (systemd)
+
+- Service runs as specified user (default: current user)
+- Logs are stored in `~/.triterm/logs/`
+- Service file: `/etc/systemd/system/triterm.service`
+- Requires sudo privileges for installation
+
+#### macOS (launchd)
+
+- Service runs as current user
+- Auto-starts on login
+- Plist file: `~/Library/LaunchAgents/com.triterm.server.plist`
+- No sudo required for user-level service
+
+#### Windows
+
+- Runs as Windows Service
+- Requires Administrator privileges
+- Uses node-windows for service management
+- Logs in Event Viewer and `~/.triterm/logs/`
+
+### Service Configuration
+
+When installing as a service, TriTerm will:
+
+1. Build the server for production
+2. Create necessary directories for data and logs
+3. Configure the service to start on boot
+4. Set up proper logging and error handling
+
+The service uses the same `.env` configuration as development, but runs in production mode.
 
 ## 📖 Usage Guide
 
