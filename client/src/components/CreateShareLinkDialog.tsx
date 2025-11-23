@@ -173,7 +173,6 @@ export function CreateShareLinkDialog({
     if (created) {
       // Reset state
       setCreated(false);
-      setShareCode('');
       setShareUrl('');
       setConfig({
         requireName: true,

@@ -188,4 +188,17 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * Get available OAuth providers
+ */
+export async function getAvailableOAuthProviders(): Promise<string[]> {
+  try {
+    const response = await api.get<{ success: boolean; providers: string[] }>('/api/auth/oauth/providers');
+    return response.data.providers;
+  } catch (error) {
+    // If endpoint fails, return empty array (no OAuth available)
+    return [];
+  }
+}
+
 export { api };
