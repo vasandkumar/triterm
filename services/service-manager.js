@@ -258,7 +258,7 @@ class ServiceManager {
       console.log('\nThe service will start automatically.');
       console.log('\nTo check status:');
       console.log('  npx triterm service status');
-    } catch (error) {
+    } catch {
       // Service might already be loaded
       console.log('Service might already be loaded. Trying to reload...');
       try {
@@ -380,7 +380,7 @@ svc.install();
       this.runCommand('sudo systemctl daemon-reload');
 
       console.log('✅ Service uninstalled successfully!');
-    } catch (error) {
+    } catch {
       console.log('Service might not be installed or already removed.');
     }
   }
@@ -398,7 +398,7 @@ svc.install();
       fs.unlinkSync(plistPath);
 
       console.log('✅ Service uninstalled successfully!');
-    } catch (error) {
+    } catch {
       console.log('Service might not be installed or already removed.');
     }
   }
@@ -429,7 +429,7 @@ svc.uninstall();
 
       // Clean up uninstaller script
       fs.unlinkSync(uninstallerPath);
-    } catch (error) {
+    } catch {
       console.log('Service might not be installed or already removed.');
     }
   }

@@ -60,6 +60,13 @@ export default [
     },
   },
   {
+    // Allow console.log in CLI files (bin/ and services/)
+    files: ['bin/**/*.js', 'services/**/*.js'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
