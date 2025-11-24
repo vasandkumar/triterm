@@ -468,7 +468,7 @@ function AuthenticatedApp({ user, logout }: { user: UserType | null; logout: () 
     localStorage.setItem('triterm_header_collapsed', headerCollapsed.toString());
   }, [headerCollapsed]);
 
-  // Enterprise-grade session synchronization: Fetch all terminals from server
+  // Session synchronization: Fetch all terminals from server
   useEffect(() => {
     if (!isConnected || !socket || isCreating) return;
 
@@ -815,7 +815,7 @@ function AuthenticatedApp({ user, logout }: { user: UserType | null; logout: () 
               </div>
               <div>
                 <h1 className="text-lg font-bold">TriTerm</h1>
-                <p className="text-xs text-muted-foreground">Enterprise Terminal Manager</p>
+                <p className="text-xs text-muted-foreground">Web Terminal Manager</p>
               </div>
             </div>
           </div>

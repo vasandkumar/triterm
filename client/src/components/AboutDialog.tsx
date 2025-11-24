@@ -15,7 +15,7 @@ export function AboutDialog({ open, onOpenChange }) {
             </div>
             <div>
               <DialogTitle className="text-2xl">TriTerm</DialogTitle>
-              <p className="text-sm text-muted-foreground">Enterprise Terminal Manager v1.0.0</p>
+              <p className="text-sm text-muted-foreground">Web-based Terminal Manager</p>
             </div>
           </div>
         </DialogHeader>
@@ -24,9 +24,9 @@ export function AboutDialog({ open, onOpenChange }) {
           {/* Description */}
           <div>
             <p className="text-muted-foreground">
-              TriTerm is a powerful, enterprise-level multi-terminal web application that allows you
-              to run multiple terminal sessions side-by-side in your browser with real-time
-              WebSocket communication.
+              TriTerm is a web-based terminal application that lets you run multiple terminal
+              sessions in your browser, share them securely with others, and collaborate in
+              real-time using WebSocket communication.
             </p>
           </div>
 
@@ -41,27 +41,27 @@ export function AboutDialog({ open, onOpenChange }) {
             <ul className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                Terminal sharing with secure links
+              </li>
+              <li className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                Real-time collaboration
+              </li>
+              <li className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
                 Multiple terminal sessions
               </li>
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Real-time communication
+                Flexible layouts & splits
               </li>
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Responsive grid layout
+                Session persistence
               </li>
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Terminal maximize/split
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Session management
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Secure connections
+                Role-based access control
               </li>
             </ul>
           </div>
@@ -105,8 +105,8 @@ export function AboutDialog({ open, onOpenChange }) {
                 Security
               </h3>
               <p className="text-xs text-muted-foreground">
-                Enterprise-grade security with CORS protection, rate limiting, session isolation,
-                and input sanitization.
+                Secure by design with CORS protection, rate limiting, CSRF protection, encrypted
+                sessions, and input sanitization.
               </p>
             </div>
             <div>
