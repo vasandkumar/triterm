@@ -13,7 +13,7 @@ export function AuthPage() {
           <div>
             <h1 className="text-5xl font-bold text-white mb-4">TriTerm</h1>
             <p className="text-xl text-gray-300">
-              Enterprise-grade multi-terminal web application
+              Web-based terminal with real-time collaboration
             </p>
           </div>
 
@@ -23,8 +23,8 @@ export function AuthPage() {
                 ✓
               </div>
               <div>
-                <h3 className="text-white font-medium">Multiple Terminals</h3>
-                <p className="text-sm">Run multiple terminal sessions side-by-side</p>
+                <h3 className="text-white font-medium">Terminal Sharing</h3>
+                <p className="text-sm">Share terminals via secure links with permission controls</p>
               </div>
             </div>
 
@@ -33,8 +33,8 @@ export function AuthPage() {
                 ✓
               </div>
               <div>
-                <h3 className="text-white font-medium">Secure & Fast</h3>
-                <p className="text-sm">Enterprise-grade security with JWT authentication</p>
+                <h3 className="text-white font-medium">Real-time Collaboration</h3>
+                <p className="text-sm">View and interact with shared terminals in real-time</p>
               </div>
             </div>
 
@@ -43,8 +43,8 @@ export function AuthPage() {
                 ✓
               </div>
               <div>
-                <h3 className="text-white font-medium">Real-time Sync</h3>
-                <p className="text-sm">WebSocket-based real-time terminal output</p>
+                <h3 className="text-white font-medium">Session Management</h3>
+                <p className="text-sm">Multiple terminals, layouts, and persistent sessions</p>
               </div>
             </div>
           </div>
