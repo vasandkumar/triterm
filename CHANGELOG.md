@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.2.1...triterm-v0.3.0) (2025-11-29)
+
+
+### Features
+
+* add user approval system and Phase 1 security fixes ([6d14d1c](https://github.com/vasandkumar/triterm/commit/6d14d1c3847904351af94016b7af8e2b6ba433e7))
+* User approval system ([#7](https://github.com/vasandkumar/triterm/issues/7)) ([215f19e](https://github.com/vasandkumar/triterm/commit/215f19e4008e3048fc576add4a3b980583e7dd6c))
+
+
+### Bug Fixes
+
+* migrate tokens to httpOnly cookies and fix OAuth token exposure ([de7059b](https://github.com/vasandkumar/triterm/commit/de7059b18ebe2009f17262644396b25d165374e1))
+
 ## [0.2.1](https://github.com/vasandkumar/triterm/compare/triterm-v0.2.0...triterm-v0.2.1) (2025-11-29)
 
 

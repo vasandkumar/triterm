@@ -1,6 +1,6 @@
 {
   "name": "triterm",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Modern, secure web-based terminal manager with multi-user support",
   "keywords": [
