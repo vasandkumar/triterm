@@ -2148,6 +2148,10 @@ async function startServer() {
   // Initialize Redis (non-blocking, will gracefully degrade if unavailable)
   await initializeRedis();
 
+  // Check Redis status for display
+  const redisHealthy = await isRedisHealthy();
+  const redisStatus = redisHealthy ? 'Connected' : 'In-Memory Mode';
+
   httpServer.listen(PORT, HOST, () => {
   const networkAddress = getNetworkAddress();
   const portStr = PORT.toString();
@@ -2158,13 +2162,13 @@ async function startServer() {
     environment: process.env.NODE_ENV || 'development',
     maxTerminals: MAX_TERMINALS,
     authRequired: process.env.REQUIRE_AUTH === 'true',
+    redisMode: redisStatus,
     localUrl: `http://localhost:${portStr}`,
     networkUrl: `http://${networkAddress}:${portStr}`,
   });
 
   // Pretty console output for development
   if (process.env.NODE_ENV !== 'production') {
-    const redisStatus = await isRedisHealthy() ? 'Connected' : 'In-Memory Mode';
     console.log(`
 ╔═══════════════════════════════════════════════╗
 ║         TriTerm Server Running                ║
