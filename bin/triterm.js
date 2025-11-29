@@ -138,10 +138,61 @@ program
         choices: ['SQLite (recommended for development)', 'PostgreSQL (production)'],
         default: 'SQLite (recommended for development)',
       },
+      {
+        type: 'confirm',
+        name: 'useRedis',
+        message: 'Enable Redis for horizontal scaling? (optional)',
+        default: false,
+      },
     ]);
+
+    // Redis configuration (if enabled)
+    let redisConfig = null;
+    if (answers.useRedis) {
+      redisConfig = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'host',
+          message: 'Redis host:',
+          default: 'localhost',
+        },
+        {
+          type: 'input',
+          name: 'port',
+          message: 'Redis port:',
+          default: '6379',
+        },
+        {
+          type: 'password',
+          name: 'password',
+          message: 'Redis password (leave empty if none):',
+          default: '',
+        },
+        {
+          type: 'input',
+          name: 'db',
+          message: 'Redis database number:',
+          default: '0',
+        },
+      ]);
+    }
 
     // Generate JWT secret if not provided
     const jwtSecret = answers.jwtSecret || generateRandomSecret();
+    // Generate encryption key (32 bytes = 64 hex characters)
+    const encryptionKey = generateRandomSecret();
+
+    // Build Redis configuration section
+    let redisSection = '';
+    if (redisConfig) {
+      redisSection = `
+# Redis Configuration (for horizontal scaling and performance)
+REDIS_HOST=${redisConfig.host}
+REDIS_PORT=${redisConfig.port}${redisConfig.password ? `\nREDIS_PASSWORD=${redisConfig.password}` : ''}
+REDIS_DB=${redisConfig.db}
+# SERVER_ID=server-1
+`;
+    }
 
     // Create .env file
     const envContent = `# Server Configuration
@@ -156,6 +207,8 @@ DATABASE_URL="${answers.database.startsWith('SQLite') ? 'file:./dev.db' : 'postg
 JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+# Encryption key for OAuth tokens (32 bytes = 64 hex chars)
+ENCRYPTION_KEY=${encryptionKey}${redisSection}
 
 # Security
 REQUIRE_AUTH=${answers.requireAuth ? 'true' : 'false'}
@@ -436,6 +489,8 @@ DATABASE_URL="file:./dev.db"
 JWT_SECRET=${generateRandomSecret()}
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+# Encryption key for OAuth tokens (32 bytes = 64 hex chars)
+ENCRYPTION_KEY=${generateRandomSecret()}
 
 # Security (Optional - for restricted access)
 REQUIRE_AUTH=${options.auth ? 'true' : 'false'}

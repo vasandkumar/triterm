@@ -3,10 +3,15 @@
  *
  * Manages the mapping between users, terminals, and socket connections
  * to support multi-device terminal access.
+ *
+ * Now uses Redis for distributed state management (hybrid approach with DB persistence)
  */
 
 import { Socket } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
+import { RedisRegistryManager } from './redisRegistryManager.js';
+import { isRedisHealthy } from './redis.js';
+import logger from '../config/logger.js';
 
 const prisma = new PrismaClient();
 
@@ -26,21 +31,51 @@ interface TerminalDevices {
 }
 
 export class UserTerminalRegistry {
-  // Map: userId -> Map: terminalId -> TerminalDevices
+  // Map: userId -> Map: terminalId -> TerminalDevices (legacy in-memory storage)
   private userTerminals: Map<string, Map<string, TerminalDevices>>;
 
   // Reverse lookup: socketId -> {userId, terminalId}
   private socketToTerminal: Map<string, { userId: string; terminalId: string }[]>;
 
-  constructor() {
+  // Redis manager instance for distributed state
+  private redisManager: RedisRegistryManager;
+
+  constructor(serverId?: string) {
     this.userTerminals = new Map();
     this.socketToTerminal = new Map();
+    this.redisManager = new RedisRegistryManager(serverId);
   }
 
   /**
-   * Add a socket connection to a terminal
+   * Add a socket connection to a terminal (hybrid: Redis + in-memory fallback)
    */
-  addSocket(
+  async addSocket(
+    userId: string,
+    terminalId: string,
+    socketId: string,
+    deviceId?: string,
+    deviceName?: string
+  ): Promise<void> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        // Use Redis for distributed state
+        await this.redisManager.addSocket(userId, terminalId, socketId, deviceId, deviceName);
+      } else {
+        // Fallback to in-memory storage
+        this.addSocketInMemory(userId, terminalId, socketId, deviceId, deviceName);
+      }
+    } catch (error) {
+      logger.error('Error adding socket, falling back to in-memory', { error });
+      this.addSocketInMemory(userId, terminalId, socketId, deviceId, deviceName);
+    }
+  }
+
+  /**
+   * Legacy in-memory socket addition (fallback)
+   */
+  private addSocketInMemory(
     userId: string,
     terminalId: string,
     socketId: string,
@@ -83,9 +118,28 @@ export class UserTerminalRegistry {
   }
 
   /**
-   * Remove a socket connection from a terminal
+   * Remove a socket connection from a terminal (hybrid: Redis + in-memory)
    */
-  removeSocket(userId: string, terminalId: string, socketId: string): boolean {
+  async removeSocket(userId: string, terminalId: string, socketId: string): Promise<boolean> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        await this.redisManager.removeSocket(userId, terminalId, socketId);
+        return true;
+      } else {
+        return this.removeSocketInMemory(userId, terminalId, socketId);
+      }
+    } catch (error) {
+      logger.error('Error removing socket, falling back to in-memory', { error });
+      return this.removeSocketInMemory(userId, terminalId, socketId);
+    }
+  }
+
+  /**
+   * Legacy in-memory socket removal (fallback)
+   */
+  private removeSocketInMemory(userId: string, terminalId: string, socketId: string): boolean {
     const userTerminals = this.userTerminals.get(userId);
     if (!userTerminals) return false;
 
@@ -129,9 +183,27 @@ export class UserTerminalRegistry {
   }
 
   /**
-   * Remove all terminals for a socket (on disconnect)
+   * Remove all terminals for a socket (on disconnect) - hybrid
    */
-  removeSocketFromAllTerminals(socketId: string): void {
+  async removeSocketFromAllTerminals(socketId: string): Promise<void> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        await this.redisManager.removeSocketFromAllTerminals(socketId);
+      } else {
+        this.removeSocketFromAllTerminalsInMemory(socketId);
+      }
+    } catch (error) {
+      logger.error('Error removing socket from all terminals, using in-memory', { error });
+      this.removeSocketFromAllTerminalsInMemory(socketId);
+    }
+  }
+
+  /**
+   * Legacy in-memory removal from all terminals
+   */
+  private removeSocketFromAllTerminalsInMemory(socketId: string): void {
     const terminals = this.socketToTerminal.get(socketId);
     if (!terminals) return;
 
@@ -139,14 +211,32 @@ export class UserTerminalRegistry {
     const terminalsCopy = [...terminals];
 
     for (const { userId, terminalId } of terminalsCopy) {
-      this.removeSocket(userId, terminalId, socketId);
+      this.removeSocketInMemory(userId, terminalId, socketId);
     }
   }
 
   /**
-   * Get all socket IDs connected to a terminal
+   * Get all socket IDs connected to a terminal (hybrid)
    */
-  getSocketsForTerminal(userId: string, terminalId: string): string[] {
+  async getSocketsForTerminal(userId: string, terminalId: string): Promise<string[]> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        return await this.redisManager.getSocketsForTerminal(userId, terminalId);
+      } else {
+        return this.getSocketsForTerminalInMemory(userId, terminalId);
+      }
+    } catch (error) {
+      logger.error('Error getting sockets, using in-memory', { error });
+      return this.getSocketsForTerminalInMemory(userId, terminalId);
+    }
+  }
+
+  /**
+   * Legacy in-memory socket retrieval
+   */
+  private getSocketsForTerminalInMemory(userId: string, terminalId: string): string[] {
     const userTerminals = this.userTerminals.get(userId);
     if (!userTerminals) return [];
 
@@ -157,136 +247,301 @@ export class UserTerminalRegistry {
   }
 
   /**
-   * Get all terminals for a user
+   * Get all terminals for a user (hybrid)
    */
-  getTerminalsForUser(userId: string): string[] {
-    const userTerminals = this.userTerminals.get(userId);
-    if (!userTerminals) return [];
+  async getTerminalsForUser(userId: string): Promise<string[]> {
+    try {
+      const useRedis = await isRedisHealthy();
 
-    return Array.from(userTerminals.keys());
-  }
-
-  /**
-   * Get all devices connected to a terminal
-   */
-  getDevicesForTerminal(userId: string, terminalId: string): DeviceInfo[] {
-    const userTerminals = this.userTerminals.get(userId);
-    if (!userTerminals) return [];
-
-    const terminalDevices = userTerminals.get(terminalId);
-    if (!terminalDevices) return [];
-
-    return Array.from(terminalDevices.devices.values());
-  }
-
-  /**
-   * Get primary socket ID for a terminal
-   */
-  getPrimarySocket(userId: string, terminalId: string): string | undefined {
-    const userTerminals = this.userTerminals.get(userId);
-    if (!userTerminals) return undefined;
-
-    const terminalDevices = userTerminals.get(terminalId);
-    return terminalDevices?.primarySocketId;
-  }
-
-  /**
-   * Set primary socket for a terminal (transfer control)
-   */
-  setPrimarySocket(userId: string, terminalId: string, socketId: string): boolean {
-    const userTerminals = this.userTerminals.get(userId);
-    if (!userTerminals) return false;
-
-    const terminalDevices = userTerminals.get(terminalId);
-    if (!terminalDevices) return false;
-
-    // Verify socket is connected to this terminal
-    if (!terminalDevices.devices.has(socketId)) return false;
-
-    terminalDevices.primarySocketId = socketId;
-    return true;
-  }
-
-  /**
-   * Update last ping time for a device
-   */
-  updatePing(userId: string, terminalId: string, socketId: string): void {
-    const userTerminals = this.userTerminals.get(userId);
-    if (!userTerminals) return;
-
-    const terminalDevices = userTerminals.get(terminalId);
-    if (!terminalDevices) return;
-
-    const device = terminalDevices.devices.get(socketId);
-    if (device) {
-      device.lastPingAt = new Date();
+      if (useRedis) {
+        return await this.redisManager.getTerminalsForUser(userId);
+      } else {
+        const userTerminals = this.userTerminals.get(userId);
+        if (!userTerminals) return [];
+        return Array.from(userTerminals.keys());
+      }
+    } catch (error) {
+      logger.error('Error getting terminals for user, using in-memory', { error });
+      const userTerminals = this.userTerminals.get(userId);
+      if (!userTerminals) return [];
+      return Array.from(userTerminals.keys());
     }
   }
 
   /**
-   * Check if a socket is connected to a terminal
+   * Get all devices connected to a terminal (hybrid)
    */
-  isSocketConnected(userId: string, terminalId: string, socketId: string): boolean {
-    const sockets = this.getSocketsForTerminal(userId, terminalId);
-    return sockets.includes(socketId);
+  async getDevicesForTerminal(userId: string, terminalId: string): Promise<DeviceInfo[]> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        const devices = await this.redisManager.getDevicesForTerminal(userId, terminalId);
+        // Convert Redis format to internal format
+        return devices.map(d => ({
+          socketId: d.socketId,
+          deviceId: d.deviceId,
+          deviceName: d.deviceName,
+          connectedAt: new Date(d.connectedAt),
+          lastPingAt: new Date(d.lastPingAt),
+        }));
+      } else {
+        const userTerminals = this.userTerminals.get(userId);
+        if (!userTerminals) return [];
+
+        const terminalDevices = userTerminals.get(terminalId);
+        if (!terminalDevices) return [];
+
+        return Array.from(terminalDevices.devices.values());
+      }
+    } catch (error) {
+      logger.error('Error getting devices, using in-memory', { error });
+      const userTerminals = this.userTerminals.get(userId);
+      if (!userTerminals) return [];
+
+      const terminalDevices = userTerminals.get(terminalId);
+      if (!terminalDevices) return [];
+
+      return Array.from(terminalDevices.devices.values());
+    }
   }
 
   /**
-   * Get device count for a terminal
+   * Get primary socket ID for a terminal (hybrid)
    */
-  getDeviceCount(userId: string, terminalId: string): number {
-    return this.getSocketsForTerminal(userId, terminalId).length;
+  async getPrimarySocket(userId: string, terminalId: string): Promise<string | undefined> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        const primarySocket = await this.redisManager.getPrimarySocket(userId, terminalId);
+        return primarySocket || undefined;
+      } else {
+        const userTerminals = this.userTerminals.get(userId);
+        if (!userTerminals) return undefined;
+
+        const terminalDevices = userTerminals.get(terminalId);
+        return terminalDevices?.primarySocketId;
+      }
+    } catch (error) {
+      logger.error('Error getting primary socket, using in-memory', { error });
+      const userTerminals = this.userTerminals.get(userId);
+      if (!userTerminals) return undefined;
+
+      const terminalDevices = userTerminals.get(terminalId);
+      return terminalDevices?.primarySocketId;
+    }
   }
 
   /**
-   * Check if terminal has any connected devices
+   * Set primary socket for a terminal (transfer control) - hybrid
    */
-  hasConnectedDevices(userId: string, terminalId: string): boolean {
-    return this.getDeviceCount(userId, terminalId) > 0;
+  async setPrimarySocket(userId: string, terminalId: string, socketId: string): Promise<boolean> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        return await this.redisManager.setPrimarySocket(userId, terminalId, socketId);
+      } else {
+        const userTerminals = this.userTerminals.get(userId);
+        if (!userTerminals) return false;
+
+        const terminalDevices = userTerminals.get(terminalId);
+        if (!terminalDevices) return false;
+
+        // Verify socket is connected to this terminal
+        if (!terminalDevices.devices.has(socketId)) return false;
+
+        terminalDevices.primarySocketId = socketId;
+        return true;
+      }
+    } catch (error) {
+      logger.error('Error setting primary socket, using in-memory', { error });
+      const userTerminals = this.userTerminals.get(userId);
+      if (!userTerminals) return false;
+
+      const terminalDevices = userTerminals.get(terminalId);
+      if (!terminalDevices) return false;
+
+      if (!terminalDevices.devices.has(socketId)) return false;
+
+      terminalDevices.primarySocketId = socketId;
+      return true;
+    }
   }
 
   /**
-   * Get terminals for a socket
+   * Update last ping time for a device (hybrid)
    */
-  getTerminalsForSocket(socketId: string): Array<{ userId: string; terminalId: string }> {
-    return this.socketToTerminal.get(socketId) || [];
+  async updatePing(userId: string, terminalId: string, socketId: string): Promise<void> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        await this.redisManager.updatePing(userId, terminalId, socketId);
+      } else {
+        const userTerminals = this.userTerminals.get(userId);
+        if (!userTerminals) return;
+
+        const terminalDevices = userTerminals.get(terminalId);
+        if (!terminalDevices) return;
+
+        const device = terminalDevices.devices.get(socketId);
+        if (device) {
+          device.lastPingAt = new Date();
+        }
+      }
+    } catch (error) {
+      logger.error('Error updating ping, using in-memory', { error });
+      const userTerminals = this.userTerminals.get(userId);
+      if (!userTerminals) return;
+
+      const terminalDevices = userTerminals.get(terminalId);
+      if (!terminalDevices) return;
+
+      const device = terminalDevices.devices.get(socketId);
+      if (device) {
+        device.lastPingAt = new Date();
+      }
+    }
   }
 
   /**
-   * Get all active users
+   * Check if a socket is connected to a terminal (hybrid)
+   */
+  async isSocketConnected(userId: string, terminalId: string, socketId: string): Promise<boolean> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        return await this.redisManager.isSocketConnected(userId, terminalId, socketId);
+      } else {
+        const sockets = this.getSocketsForTerminalInMemory(userId, terminalId);
+        return sockets.includes(socketId);
+      }
+    } catch (error) {
+      logger.error('Error checking socket connection, using in-memory', { error });
+      const sockets = this.getSocketsForTerminalInMemory(userId, terminalId);
+      return sockets.includes(socketId);
+    }
+  }
+
+  /**
+   * Get device count for a terminal (hybrid)
+   */
+  async getDeviceCount(userId: string, terminalId: string): Promise<number> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        return await this.redisManager.getDeviceCount(userId, terminalId);
+      } else {
+        return this.getSocketsForTerminalInMemory(userId, terminalId).length;
+      }
+    } catch (error) {
+      logger.error('Error getting device count, using in-memory', { error });
+      return this.getSocketsForTerminalInMemory(userId, terminalId).length;
+    }
+  }
+
+  /**
+   * Check if terminal has any connected devices (hybrid)
+   */
+  async hasConnectedDevices(userId: string, terminalId: string): Promise<boolean> {
+    const count = await this.getDeviceCount(userId, terminalId);
+    return count > 0;
+  }
+
+  /**
+   * Get terminals for a socket (hybrid)
+   */
+  async getTerminalsForSocket(socketId: string): Promise<Array<{ userId: string; terminalId: string }>> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        return await this.redisManager.getTerminalsForSocket(socketId);
+      } else {
+        return this.socketToTerminal.get(socketId) || [];
+      }
+    } catch (error) {
+      logger.error('Error getting terminals for socket, using in-memory', { error });
+      return this.socketToTerminal.get(socketId) || [];
+    }
+  }
+
+  /**
+   * Get all active users (in-memory only - not in Redis)
    */
   getActiveUsers(): string[] {
     return Array.from(this.userTerminals.keys());
   }
 
   /**
-   * Clear all data (for testing or reset)
+   * Clear all data (for testing or reset) - hybrid
    */
-  clear(): void {
+  async clear(): Promise<void> {
+    try {
+      const useRedis = await isRedisHealthy();
+
+      if (useRedis) {
+        await this.redisManager.clear();
+      }
+    } catch (error) {
+      logger.error('Error clearing Redis registry', { error });
+    }
+
+    // Always clear in-memory
     this.userTerminals.clear();
     this.socketToTerminal.clear();
   }
 
   /**
-   * Get statistics
+   * Get statistics (hybrid)
    */
-  getStats() {
-    let totalTerminals = 0;
-    let totalDevices = 0;
+  async getStats() {
+    try {
+      const useRedis = await isRedisHealthy();
 
-    for (const userTerminals of this.userTerminals.values()) {
-      totalTerminals += userTerminals.size;
-      for (const terminalDevices of userTerminals.values()) {
-        totalDevices += terminalDevices.devices.size;
+      if (useRedis) {
+        return await this.redisManager.getStats();
+      } else {
+        let totalTerminals = 0;
+        let totalDevices = 0;
+
+        for (const userTerminals of this.userTerminals.values()) {
+          totalTerminals += userTerminals.size;
+          for (const terminalDevices of userTerminals.values()) {
+            totalDevices += terminalDevices.devices.size;
+          }
+        }
+
+        return {
+          activeUsers: this.userTerminals.size,
+          totalTerminals,
+          totalDevices,
+          averageDevicesPerTerminal: totalTerminals > 0 ? totalDevices / totalTerminals : 0,
+        };
       }
-    }
+    } catch (error) {
+      logger.error('Error getting stats, using in-memory', { error });
+      let totalTerminals = 0;
+      let totalDevices = 0;
 
-    return {
-      activeUsers: this.userTerminals.size,
-      totalTerminals,
-      totalDevices,
-      averageDevicesPerTerminal: totalTerminals > 0 ? totalDevices / totalTerminals : 0,
-    };
+      for (const userTerminals of this.userTerminals.values()) {
+        totalTerminals += userTerminals.size;
+        for (const terminalDevices of userTerminals.values()) {
+          totalDevices += terminalDevices.devices.size;
+        }
+      }
+
+      return {
+        activeUsers: this.userTerminals.size,
+        totalTerminals,
+        totalDevices,
+        averageDevicesPerTerminal: totalTerminals > 0 ? totalDevices / totalTerminals : 0,
+      };
+    }
   }
 
   /**

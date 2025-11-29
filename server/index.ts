@@ -32,6 +32,7 @@ import { userTerminalRegistry } from './lib/userTerminalRegistry.js';
 import { inputQueueManager } from './lib/inputQueue.js';
 import { setSocketIO } from './lib/socketManager.js';
 import { socketRateLimiter, SOCKET_RATE_LIMITS } from './middleware/rateLimiter.js';
+import { connectRedis, disconnectRedis, isRedisHealthy } from './lib/redis.js';
 
 dotenv.config();
 
@@ -433,11 +434,11 @@ function getShell(): string {
 }
 
 // Verify terminal ownership (multi-device aware)
-function verifyTerminalOwnership(
+async function verifyTerminalOwnership(
   terminal: TerminalSession | undefined,
   socket: Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>,
   terminalId?: string
-): boolean {
+): Promise<boolean> {
   if (!terminal) {
     logger.warn('Terminal ownership verification failed: terminal not found', {
       terminalId,
@@ -462,7 +463,7 @@ function verifyTerminalOwnership(
 
   // For authenticated users, check if socket is registered for this terminal
   if (terminal.userId && terminalId) {
-    const isConnected = userTerminalRegistry.isSocketConnected(terminal.userId, terminalId, socket.id);
+    const isConnected = await userTerminalRegistry.isSocketConnected(terminal.userId, terminalId, socket.id);
     if (!isConnected) {
       logger.warn('Terminal ownership verification failed: socket not in registry', {
         terminalId,
@@ -558,7 +559,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
         // Add socket to registry (only if authenticated)
         if (userId) {
-          userTerminalRegistry.addSocket(userId, terminalId, socket.id, deviceId, deviceName);
+          await userTerminalRegistry.addSocket(userId, terminalId, socket.id, deviceId, deviceName);
 
           // Persist socket connection to database
           if (sessionId) {
@@ -571,7 +572,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
             userId,
             deviceId,
             deviceName,
-            totalDevices: userTerminalRegistry.getDeviceCount(userId, terminalId),
+            totalDevices: await userTerminalRegistry.getDeviceCount(userId, terminalId),
           });
         }
       } catch (error) {
@@ -597,7 +598,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const inputQueue = inputQueueManager.getQueue(terminalId);
 
       // Handle queued input processing
-      inputQueue.on('process', (queuedInput, callback) => {
+      inputQueue.on('process', async (queuedInput, callback) => {
         try {
           const terminal = terminals.get(terminalId);
           if (!terminal) {
@@ -614,7 +615,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
           // Multi-device: Broadcast input to ALL other connected devices (not the sender)
           if (terminal.userId) {
-            const connectedSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
+            const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
             connectedSockets.forEach((sid) => {
               if (sid !== queuedInput.socketId) {
                 // Send input echo to other devices
@@ -662,7 +663,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       });
 
       // Handle terminal output
-      term.onData((data) => {
+      term.onData(async (data) => {
         const terminal = terminals.get(terminalId);
         if (terminal) {
           // Store output in buffer for session recovery
@@ -681,7 +682,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
           // Multi-device: Broadcast to ALL connected sockets for this terminal
           if (terminal.userId) {
-            const connectedSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
+            const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
             if (connectedSockets.length > 0) {
               // Add owner's connected devices
               targetSockets.push(...connectedSockets);
@@ -707,14 +708,14 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       });
 
       // Handle terminal exit
-      term.onExit(({ exitCode, signal }) => {
+      term.onExit(async ({ exitCode, signal }) => {
         logger.info('Terminal exited', { terminalId, exitCode, signal, socketId: socket.id });
 
         const terminal = terminals.get(terminalId);
 
         // Multi-device: Broadcast exit to ALL connected sockets
         if (terminal?.userId) {
-          const connectedSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
+          const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
           connectedSockets.forEach((socketId) => {
             io.to(socketId).emit('terminal-exit', { terminalId, exitCode, signal });
 
@@ -724,9 +725,9 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
           });
 
           // Clean up registry for all sockets
-          connectedSockets.forEach((socketId) => {
-            userTerminalRegistry.removeSocket(terminal.userId!, terminalId, socketId);
-          });
+          for (const socketId of connectedSockets) {
+            await userTerminalRegistry.removeSocket(terminal.userId!, terminalId, socketId);
+          }
         } else {
           // For non-authenticated users
           socket.emit('terminal-exit', { terminalId, exitCode, signal });
@@ -807,11 +808,11 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       // Multi-device: Add this socket to the terminal (don't replace existing connections)
       if (userId && terminal.userId) {
         // Check if socket is already registered
-        const isAlreadyConnected = userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id);
+        const isAlreadyConnected = await userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id);
 
         if (!isAlreadyConnected) {
           // Add socket to registry
-          userTerminalRegistry.addSocket(userId, terminalId, socket.id, deviceId, deviceName);
+          await userTerminalRegistry.addSocket(userId, terminalId, socket.id, deviceId, deviceName);
 
           // Persist to database if we have a sessionId
           if (terminal.sessionId) {
@@ -824,12 +825,12 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
             userId,
             deviceId,
             deviceName,
-            totalDevices: userTerminalRegistry.getDeviceCount(userId, terminalId),
+            totalDevices: await userTerminalRegistry.getDeviceCount(userId, terminalId),
           });
 
           // Notify all other connected devices about the new device
-          const connectedSockets = userTerminalRegistry.getSocketsForTerminal(userId, terminalId);
-          const devices = userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
+          const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(userId, terminalId);
+          const devices = await userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
           connectedSockets.forEach((sid) => {
             if (sid !== socket.id) {
               io.to(sid).emit('terminal-device-connected', {
@@ -858,7 +859,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const buffer = terminal.outputBuffer.join('');
 
       // Get device count for this terminal
-      const deviceCount = userId ? userTerminalRegistry.getDeviceCount(userId, terminalId) : 1;
+      const deviceCount = userId ? await userTerminalRegistry.getDeviceCount(userId, terminalId) : 1;
 
       logger.info('Terminal reconnected', {
         terminalId,
@@ -881,7 +882,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // Send input to terminal (using enterprise-grade input queue)
-  socket.on('terminal-input', (data) => {
+  socket.on('terminal-input', async (data) => {
     try {
       const { terminalId, input } = data;
 
@@ -912,7 +913,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       }
 
       // Verify terminal ownership (socket + user)
-      if (!verifyTerminalOwnership(terminal, socket, terminalId)) {
+      if (!(await verifyTerminalOwnership(terminal, socket, terminalId))) {
         logger.warn('[TerminalInput] Unauthorized access attempt', {
           socketId: socket.id,
           terminalId,
@@ -964,7 +965,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // Resize terminal
-  socket.on('terminal-resize', (data) => {
+  socket.on('terminal-resize', async (data) => {
     try {
       const { terminalId, cols, rows } = data;
 
@@ -979,7 +980,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       }
 
       // Verify terminal ownership (socket + user)
-      if (!verifyTerminalOwnership(terminal, socket, terminalId)) {
+      if (!(await verifyTerminalOwnership(terminal, socket, terminalId))) {
         return;
       }
 
@@ -1002,7 +1003,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // Keep terminal alive - updates activity timestamp
-  socket.on('terminal-keepalive', (data) => {
+  socket.on('terminal-keepalive', async (data) => {
     try {
       const { terminalId } = data;
 
@@ -1017,7 +1018,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       }
 
       // Verify ownership before updating activity
-      if (!verifyTerminalOwnership(terminal, socket, terminalId)) {
+      if (!(await verifyTerminalOwnership(terminal, socket, terminalId))) {
         return;
       }
 
@@ -1026,7 +1027,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
       // Update ping in registry
       if (terminal.userId) {
-        userTerminalRegistry.updatePing(terminal.userId, terminalId, socket.id);
+        await userTerminalRegistry.updatePing(terminal.userId, terminalId, socket.id);
       }
     } catch (error) {
       // Silently fail - keepalive is not critical
@@ -1034,7 +1035,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // List all terminals for the authenticated user (multi-device support)
-  socket.on('list-terminals', (callback) => {
+  socket.on('list-terminals', async (callback) => {
     try {
       const userId = socket.data.user?.userId;
 
@@ -1048,7 +1049,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
       for (const [terminalId, terminal] of terminals.entries()) {
         if (terminal.userId === userId) {
-          const devices = userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
+          const devices = await userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
           const deviceCount = devices.length;
 
           userTerminals.push({
@@ -1062,7 +1063,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
               deviceName: d.deviceName,
               connectedAt: d.connectedAt,
             })),
-            isConnectedOnThisDevice: userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id),
+            isConnectedOnThisDevice: await userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id),
           });
         }
       }
@@ -1099,7 +1100,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       }
 
       // Verify terminal ownership (socket + user)
-      if (!verifyTerminalOwnership(terminal, socket, terminalId)) {
+      if (!(await verifyTerminalOwnership(terminal, socket, terminalId))) {
         return;
       }
 
@@ -1144,7 +1145,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
         // Remove socket from registry but don't kill the terminal
         if (terminal.userId) {
-          userTerminalRegistry.removeSocket(terminal.userId, terminalId, socket.id);
+          await userTerminalRegistry.removeSocket(terminal.userId, terminalId, socket.id);
           await userTerminalRegistry.removeSocketFromDatabase(socket.id);
         }
 
@@ -1298,7 +1299,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       // Notify owner's management dialog about the approval
       const terminal = terminals.get(connection.sharedLink.terminalId);
       if (terminal && terminal.userId) {
-        const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, connection.sharedLink.terminalId);
+        const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, connection.sharedLink.terminalId);
         ownerSockets.forEach((ownerSocketId) => {
           io.to(ownerSocketId).emit('share:connection-approved-owner', {
             shareCode: connection.sharedLink.shareCode,
@@ -1390,7 +1391,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       // Notify owner's management dialog about the rejection
       const terminal = terminals.get(connection.sharedLink.terminalId);
       if (terminal && terminal.userId) {
-        const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, connection.sharedLink.terminalId);
+        const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, connection.sharedLink.terminalId);
         ownerSockets.forEach((ownerSocketId) => {
           io.to(ownerSocketId).emit('share:connection-rejected-owner', {
             shareCode: connection.sharedLink.shareCode,
@@ -1526,7 +1527,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
       // Notify owner
       if (terminal.userId) {
-        const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, shareLink.terminalId);
+        const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, shareLink.terminalId);
         ownerSockets.forEach((ownerSocketId) => {
           io.to(ownerSocketId).emit('share:external-user-connected', {
             terminalId: shareLink.terminalId,
@@ -1733,7 +1734,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
       // Notify all owner's sockets about the kick
       if (terminal.userId) {
-        const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, activeConnection.sharedLink.terminalId);
+        const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, activeConnection.sharedLink.terminalId);
         ownerSockets.forEach((ownerSocketId) => {
           io.to(ownerSocketId).emit('share:user-kicked', {
             shareCode: activeConnection.sharedLink.shareCode,
@@ -1842,7 +1843,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
       // Notify owner's sockets that share link was deactivated
       if (terminal.userId) {
-        const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, shareLink.terminalId);
+        const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, shareLink.terminalId);
         ownerSockets.forEach((ownerSocketId) => {
           io.to(ownerSocketId).emit('share:link-deactivated-owner', {
             terminalId: shareLink.terminalId,
@@ -1877,18 +1878,18 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
     // Multi-device: Remove this socket from the registry
     if (userId) {
-      const affectedTerminals = userTerminalRegistry.getTerminalsForSocket(socket.id);
+      const affectedTerminals = await userTerminalRegistry.getTerminalsForSocket(socket.id);
 
       for (const { userId: terminalUserId, terminalId } of affectedTerminals) {
         // Remove socket from registry
-        userTerminalRegistry.removeSocket(terminalUserId, terminalId, socket.id);
+        await userTerminalRegistry.removeSocket(terminalUserId, terminalId, socket.id);
 
         // Remove from database
         await userTerminalRegistry.removeSocketFromDatabase(socket.id);
 
         // Notify other connected devices about this device disconnecting
-        const remainingSockets = userTerminalRegistry.getSocketsForTerminal(terminalUserId, terminalId);
-        const devices = userTerminalRegistry.getDevicesForTerminal(terminalUserId, terminalId);
+        const remainingSockets = await userTerminalRegistry.getSocketsForTerminal(terminalUserId, terminalId);
+        const devices = await userTerminalRegistry.getDevicesForTerminal(terminalUserId, terminalId);
 
         remainingSockets.forEach((sid) => {
           io.to(sid).emit('terminal-device-disconnected', {
@@ -1900,7 +1901,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
           });
         });
 
-        const hasOtherDevices = userTerminalRegistry.hasConnectedDevices(terminalUserId, terminalId);
+        const hasOtherDevices = await userTerminalRegistry.hasConnectedDevices(terminalUserId, terminalId);
 
         if (hasOtherDevices) {
           logger.info('Multi-device: Socket disconnected but terminal kept alive (other devices connected)', {
@@ -1984,7 +1985,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
 
           // Notify owner
           if (terminal && terminal.userId) {
-            const ownerSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
+            const ownerSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
             ownerSockets.forEach((ownerSocketId) => {
               io.to(ownerSocketId).emit('share:external-user-disconnected', {
                 terminalId,
@@ -2023,11 +2024,11 @@ setInterval(async () => {
 
     if (terminal.userId) {
       // For authenticated users, check if any device is still connected
-      const hasConnectedDevices = userTerminalRegistry.hasConnectedDevices(terminal.userId, terminalId);
+      const hasConnectedDevices = await userTerminalRegistry.hasConnectedDevices(terminal.userId, terminalId);
 
       if (hasConnectedDevices) {
         // If devices are connected, check their last activity
-        const devices = userTerminalRegistry.getDevicesForTerminal(terminal.userId, terminalId);
+        const devices = await userTerminalRegistry.getDevicesForTerminal(terminal.userId, terminalId);
         hasRecentActivity = devices.some(device =>
           now - device.lastPingAt.getTime() < SESSION_TIMEOUT_MS
         );
@@ -2081,7 +2082,7 @@ setInterval(async () => {
 
       // Clean up registry
       if (terminal.userId) {
-        const connectedSockets = userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
+        const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
         connectedSockets.forEach((socketId) => {
           userTerminalRegistry.removeSocket(terminal.userId!, terminalId, socketId);
         });
@@ -2127,7 +2128,31 @@ function getNetworkAddress(): string {
   return 'localhost';
 }
 
-httpServer.listen(PORT, HOST, () => {
+// Initialize Redis connection (optional - gracefully degrades if not available)
+async function initializeRedis() {
+  try {
+    await connectRedis();
+    const healthy = await isRedisHealthy();
+    if (healthy) {
+      logger.info('Redis connected successfully - using hybrid cache mode');
+    } else {
+      logger.warn('Redis health check failed - using in-memory mode');
+    }
+  } catch (error) {
+    logger.warn('Redis connection failed - using in-memory mode', { error: (error as Error).message });
+  }
+}
+
+// Start server with Redis initialization
+async function startServer() {
+  // Initialize Redis (non-blocking, will gracefully degrade if unavailable)
+  await initializeRedis();
+
+  // Check Redis status for display
+  const redisHealthy = await isRedisHealthy();
+  const redisStatus = redisHealthy ? 'Connected' : 'In-Memory Mode';
+
+  httpServer.listen(PORT, HOST, () => {
   const networkAddress = getNetworkAddress();
   const portStr = PORT.toString();
 
@@ -2137,6 +2162,7 @@ httpServer.listen(PORT, HOST, () => {
     environment: process.env.NODE_ENV || 'development',
     maxTerminals: MAX_TERMINALS,
     authRequired: process.env.REQUIRE_AUTH === 'true',
+    redisMode: redisStatus,
     localUrl: `http://localhost:${portStr}`,
     networkUrl: `http://${networkAddress}:${portStr}`,
   });
@@ -2151,12 +2177,20 @@ httpServer.listen(PORT, HOST, () => {
 ║  Environment: ${(process.env.NODE_ENV || 'development').padEnd(30)} ║
 ║  Max Terminals: ${MAX_TERMINALS.toString().padEnd(28)} ║
 ║  Auth Required: ${(process.env.REQUIRE_AUTH === 'true' ? 'Yes' : 'No').padEnd(28)} ║
+║  Redis: ${redisStatus.padEnd(36)} ║
 ╠═══════════════════════════════════════════════╣
 ║  Local:   http://localhost:${portStr.padEnd(23)} ║
 ║  Network: http://${networkAddress}:${portStr.padEnd(23)} ║
 ╚═══════════════════════════════════════════════╝
   `);
   }
+  });
+}
+
+// Start the server
+startServer().catch((error) => {
+  logger.error('Failed to start server', { error });
+  process.exit(1);
 });
 
 // Schedule cleanup of old/inactive sessions
@@ -2184,7 +2218,7 @@ logger.info('Session cleanup scheduler started', {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, closing server');
 
   // Stop cleanup scheduler
@@ -2207,13 +2241,17 @@ process.on('SIGTERM', () => {
     }
   }
 
+  // Disconnect Redis
+  await disconnectRedis();
+
   httpServer.close(() => {
     logger.info('Server closed');
     process.exit(0);
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   logger.info('SIGINT received, closing server');
+  await disconnectRedis();
   process.exit(0);
 });

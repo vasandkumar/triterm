@@ -1,5 +1,7 @@
 import { prisma } from './prisma.js';
 import logger from '../config/logger.js';
+import { RedisSessionManager } from './redisSessionManager.js';
+import { isRedisHealthy } from './redis.js';
 
 export interface TerminalSessionData {
   terminalId: string;
@@ -12,31 +14,57 @@ export interface TerminalSessionData {
 }
 
 /**
- * Create a new terminal session in the database
+ * Create a new terminal session (hybrid: DB + Redis cache)
  */
 export async function createTerminalSession(data: TerminalSessionData) {
   try {
-    const session = await prisma.session.create({
-      data: {
-        terminalId: data.terminalId,
-        userId: data.userId,
-        shell: data.shell,
-        cwd: data.cwd,
-        cols: data.cols,
-        rows: data.rows,
-        socketId: data.socketId,
-        active: true,
-        lastActivityAt: new Date(),
-      },
-    });
+    // Check if Redis is available
+    const useRedis = await isRedisHealthy();
 
-    logger.info('Terminal session created in database', {
-      sessionId: session.id,
-      terminalId: session.terminalId,
-      userId: session.userId,
-    });
+    if (useRedis) {
+      // Use Redis hybrid approach
+      const cachedSession = await RedisSessionManager.createSession(data);
 
-    return session;
+      // Return in Prisma format for compatibility
+      return {
+        id: cachedSession.terminalId, // Use terminalId as id for compatibility
+        terminalId: cachedSession.terminalId,
+        userId: cachedSession.userId || null,
+        shell: cachedSession.shell,
+        cwd: cachedSession.cwd,
+        cols: cachedSession.cols,
+        rows: cachedSession.rows,
+        active: cachedSession.active,
+        socketId: data.socketId || null,
+        primarySocketId: cachedSession.primarySocketId || null,
+        createdAt: new Date(cachedSession.createdAt),
+        lastActivityAt: new Date(cachedSession.lastActivityAt),
+        expiresAt: null,
+      };
+    } else {
+      // Fallback to direct DB access
+      const session = await prisma.session.create({
+        data: {
+          terminalId: data.terminalId,
+          userId: data.userId,
+          shell: data.shell,
+          cwd: data.cwd,
+          cols: data.cols,
+          rows: data.rows,
+          socketId: data.socketId,
+          active: true,
+          lastActivityAt: new Date(),
+        },
+      });
+
+      logger.info('Terminal session created in database (Redis unavailable)', {
+        sessionId: session.id,
+        terminalId: session.terminalId,
+        userId: session.userId,
+      });
+
+      return session;
+    }
   } catch (error) {
     logger.error('Error creating terminal session', { error, data });
     throw error;
@@ -44,33 +72,37 @@ export async function createTerminalSession(data: TerminalSessionData) {
 }
 
 /**
- * Update terminal session activity timestamp
+ * Update terminal session activity timestamp (hybrid: Redis + DB)
  * Only updates if session exists (for authenticated users)
  */
 export async function updateSessionActivity(terminalId: string) {
   try {
-    // Check if session exists first
-    const session = await prisma.session.findUnique({
-      where: { terminalId },
-    });
+    const useRedis = await isRedisHealthy();
 
-    if (!session) {
-      // Session doesn't exist (unauthenticated user), skip update
-      return;
+    if (useRedis) {
+      await RedisSessionManager.updateActivity(terminalId);
+    } else {
+      // Fallback to direct DB
+      const session = await prisma.session.findUnique({
+        where: { terminalId },
+      });
+
+      if (!session) {
+        return;
+      }
+
+      await prisma.session.update({
+        where: { terminalId },
+        data: { lastActivityAt: new Date() },
+      });
     }
-
-    await prisma.session.update({
-      where: { terminalId },
-      data: { lastActivityAt: new Date() },
-    });
   } catch (error) {
-    // Silently fail - session might not exist
     logger.debug('Could not update session activity', { terminalId, error });
   }
 }
 
 /**
- * Update terminal dimensions
+ * Update terminal dimensions (hybrid: Redis + DB with distributed lock)
  * Only updates if session exists (for authenticated users)
  */
 export async function updateSessionDimensions(
@@ -79,79 +111,123 @@ export async function updateSessionDimensions(
   rows: number
 ) {
   try {
-    // Check if session exists first
-    const session = await prisma.session.findUnique({
-      where: { terminalId },
-    });
+    const useRedis = await isRedisHealthy();
 
-    if (!session) {
-      // Session doesn't exist (unauthenticated user), skip update
-      return;
+    if (useRedis) {
+      await RedisSessionManager.updateDimensions(terminalId, cols, rows);
+    } else {
+      // Fallback to direct DB
+      const session = await prisma.session.findUnique({
+        where: { terminalId },
+      });
+
+      if (!session) {
+        return;
+      }
+
+      await prisma.session.update({
+        where: { terminalId },
+        data: {
+          cols,
+          rows,
+          lastActivityAt: new Date(),
+        },
+      });
     }
-
-    await prisma.session.update({
-      where: { terminalId },
-      data: {
-        cols,
-        rows,
-        lastActivityAt: new Date(),
-      },
-    });
   } catch (error) {
     logger.debug('Could not update session dimensions', { terminalId, error });
   }
 }
 
 /**
- * Mark a terminal session as inactive
+ * Mark a terminal session as inactive (hybrid: Redis + DB with tombstone)
  */
 export async function deactivateSession(terminalId: string) {
   try {
-    await prisma.session.update({
-      where: { terminalId },
-      data: {
-        active: false,
-        socketId: null,
-      },
-    });
+    const useRedis = await isRedisHealthy();
 
-    logger.info('Terminal session deactivated', { terminalId });
+    if (useRedis) {
+      await RedisSessionManager.deactivateSession(terminalId);
+    } else {
+      // Fallback to direct DB
+      await prisma.session.update({
+        where: { terminalId },
+        data: {
+          active: false,
+          socketId: null,
+        },
+      });
+
+      logger.info('Terminal session deactivated', { terminalId });
+    }
   } catch (error) {
     logger.error('Error deactivating terminal session', { error, terminalId });
   }
 }
 
 /**
- * Delete a terminal session from database
+ * Delete a terminal session (hybrid: Redis tombstone + DB delete)
  */
 export async function deleteSession(terminalId: string) {
   try {
-    await prisma.session.delete({
-      where: { terminalId },
-    });
+    const useRedis = await isRedisHealthy();
 
-    logger.info('Terminal session deleted', { terminalId });
+    if (useRedis) {
+      await RedisSessionManager.deleteSession(terminalId);
+    } else {
+      // Fallback to direct DB
+      await prisma.session.delete({
+        where: { terminalId },
+      });
+
+      logger.info('Terminal session deleted', { terminalId });
+    }
   } catch (error) {
     logger.debug('Could not delete session', { terminalId, error });
   }
 }
 
 /**
- * Get all active sessions for a user
+ * Get all active sessions for a user (hybrid: Redis + DB)
  */
 export async function getUserActiveSessions(userId: string) {
   try {
-    const sessions = await prisma.session.findMany({
-      where: {
-        userId,
-        active: true,
-      },
-      orderBy: {
-        lastActivityAt: 'desc',
-      },
-    });
+    const useRedis = await isRedisHealthy();
 
-    return sessions;
+    if (useRedis) {
+      const cachedSessions =
+        await RedisSessionManager.getUserActiveSessions(userId);
+
+      // Convert to Prisma format for compatibility
+      return cachedSessions.map((s) => ({
+        id: s.terminalId,
+        terminalId: s.terminalId,
+        userId: s.userId || null,
+        shell: s.shell,
+        cwd: s.cwd,
+        cols: s.cols,
+        rows: s.rows,
+        active: s.active,
+        socketId: null,
+        primarySocketId: s.primarySocketId || null,
+        createdAt: new Date(s.createdAt),
+        lastActivityAt: new Date(s.lastActivityAt),
+        expiresAt: null,
+      }));
+    } else {
+      // Fallback to direct DB
+      const sessions = await prisma.session.findMany({
+        where: {
+          userId,
+          active: true,
+        },
+        orderBy: {
+          lastActivityAt: 'desc',
+        },
+      });
+
+      return sessions;
+    }
   } catch (error) {
     logger.error('Error fetching user sessions', { error, userId });
     return [];
@@ -159,15 +235,43 @@ export async function getUserActiveSessions(userId: string) {
 }
 
 /**
- * Get a specific terminal session
+ * Get a specific terminal session (hybrid: Redis cache-first)
  */
 export async function getSession(terminalId: string) {
   try {
-    const session = await prisma.session.findUnique({
-      where: { terminalId },
-    });
+    const useRedis = await isRedisHealthy();
 
-    return session;
+    if (useRedis) {
+      const cachedSession = await RedisSessionManager.getSession(terminalId);
+
+      if (!cachedSession) {
+        return null;
+      }
+
+      // Convert to Prisma format
+      return {
+        id: cachedSession.terminalId,
+        terminalId: cachedSession.terminalId,
+        userId: cachedSession.userId || null,
+        shell: cachedSession.shell,
+        cwd: cachedSession.cwd,
+        cols: cachedSession.cols,
+        rows: cachedSession.rows,
+        active: cachedSession.active,
+        socketId: null,
+        primarySocketId: cachedSession.primarySocketId || null,
+        createdAt: new Date(cachedSession.createdAt),
+        lastActivityAt: new Date(cachedSession.lastActivityAt),
+        expiresAt: null,
+      };
+    } else {
+      // Fallback to direct DB
+      const session = await prisma.session.findUnique({
+        where: { terminalId },
+      });
+
+      return session;
+    }
   } catch (error) {
     logger.debug('Could not find session', { terminalId, error });
     return null;
@@ -175,39 +279,47 @@ export async function getSession(terminalId: string) {
 }
 
 /**
- * Clean up inactive sessions older than specified hours
+ * Clean up inactive sessions older than specified hours (hybrid: DB cleanup)
  */
 export async function cleanupOldSessions(inactiveHours: number = 24) {
   try {
-    const cutoffTime = new Date();
-    cutoffTime.setHours(cutoffTime.getHours() - inactiveHours);
+    const useRedis = await isRedisHealthy();
 
-    const result = await prisma.session.deleteMany({
-      where: {
-        OR: [
-          {
-            active: false,
-            lastActivityAt: {
-              lt: cutoffTime,
-            },
-          },
-          {
-            expiresAt: {
-              lt: new Date(),
-            },
-          },
-        ],
-      },
-    });
+    if (useRedis) {
+      // Redis manager handles both DB cleanup and cache invalidation
+      return await RedisSessionManager.cleanupOldSessions(inactiveHours);
+    } else {
+      // Fallback to direct DB
+      const cutoffTime = new Date();
+      cutoffTime.setHours(cutoffTime.getHours() - inactiveHours);
 
-    if (result.count > 0) {
-      logger.info('Cleaned up old terminal sessions', {
-        count: result.count,
-        inactiveHours,
+      const result = await prisma.session.deleteMany({
+        where: {
+          OR: [
+            {
+              active: false,
+              lastActivityAt: {
+                lt: cutoffTime,
+              },
+            },
+            {
+              expiresAt: {
+                lt: new Date(),
+              },
+            },
+          ],
+        },
       });
-    }
 
-    return result.count;
+      if (result.count > 0) {
+        logger.info('Cleaned up old terminal sessions', {
+          count: result.count,
+          inactiveHours,
+        });
+      }
+
+      return result.count;
+    }
   } catch (error) {
     logger.error('Error cleaning up old sessions', { error });
     return 0;
@@ -215,28 +327,33 @@ export async function cleanupOldSessions(inactiveHours: number = 24) {
 }
 
 /**
- * Update socket ID for a terminal session
+ * Update primary socket ID for a terminal session (hybrid: Redis + DB with lock)
  * Only updates if session exists (for authenticated users)
  */
 export async function updateSessionSocket(terminalId: string, socketId: string | null) {
   try {
-    // Check if session exists first
-    const session = await prisma.session.findUnique({
-      where: { terminalId },
-    });
+    const useRedis = await isRedisHealthy();
 
-    if (!session) {
-      // Session doesn't exist (unauthenticated user), skip update
-      return;
+    if (useRedis) {
+      await RedisSessionManager.updatePrimarySocket(terminalId, socketId);
+    } else {
+      // Fallback to direct DB
+      const session = await prisma.session.findUnique({
+        where: { terminalId },
+      });
+
+      if (!session) {
+        return;
+      }
+
+      await prisma.session.update({
+        where: { terminalId },
+        data: {
+          socketId,
+          lastActivityAt: new Date(),
+        },
+      });
     }
-
-    await prisma.session.update({
-      where: { terminalId },
-      data: {
-        socketId,
-        lastActivityAt: new Date(),
-      },
-    });
   } catch (error) {
     logger.debug('Could not update session socket', { terminalId, error });
   }
