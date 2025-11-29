@@ -32,6 +32,7 @@ import { userTerminalRegistry } from './lib/userTerminalRegistry.js';
 import { inputQueueManager } from './lib/inputQueue.js';
 import { setSocketIO } from './lib/socketManager.js';
 import { socketRateLimiter, SOCKET_RATE_LIMITS } from './middleware/rateLimiter.js';
+import { connectRedis, disconnectRedis, isRedisHealthy } from './lib/redis.js';
 
 dotenv.config();
 
@@ -2127,7 +2128,27 @@ function getNetworkAddress(): string {
   return 'localhost';
 }
 
-httpServer.listen(PORT, HOST, () => {
+// Initialize Redis connection (optional - gracefully degrades if not available)
+async function initializeRedis() {
+  try {
+    await connectRedis();
+    const healthy = await isRedisHealthy();
+    if (healthy) {
+      logger.info('Redis connected successfully - using hybrid cache mode');
+    } else {
+      logger.warn('Redis health check failed - using in-memory mode');
+    }
+  } catch (error) {
+    logger.warn('Redis connection failed - using in-memory mode', { error: (error as Error).message });
+  }
+}
+
+// Start server with Redis initialization
+async function startServer() {
+  // Initialize Redis (non-blocking, will gracefully degrade if unavailable)
+  await initializeRedis();
+
+  httpServer.listen(PORT, HOST, () => {
   const networkAddress = getNetworkAddress();
   const portStr = PORT.toString();
 
@@ -2143,6 +2164,7 @@ httpServer.listen(PORT, HOST, () => {
 
   // Pretty console output for development
   if (process.env.NODE_ENV !== 'production') {
+    const redisStatus = await isRedisHealthy() ? 'Connected' : 'In-Memory Mode';
     console.log(`
 ╔═══════════════════════════════════════════════╗
 ║         TriTerm Server Running                ║
@@ -2151,12 +2173,20 @@ httpServer.listen(PORT, HOST, () => {
 ║  Environment: ${(process.env.NODE_ENV || 'development').padEnd(30)} ║
 ║  Max Terminals: ${MAX_TERMINALS.toString().padEnd(28)} ║
 ║  Auth Required: ${(process.env.REQUIRE_AUTH === 'true' ? 'Yes' : 'No').padEnd(28)} ║
+║  Redis: ${redisStatus.padEnd(36)} ║
 ╠═══════════════════════════════════════════════╣
 ║  Local:   http://localhost:${portStr.padEnd(23)} ║
 ║  Network: http://${networkAddress}:${portStr.padEnd(23)} ║
 ╚═══════════════════════════════════════════════╝
   `);
   }
+  });
+}
+
+// Start the server
+startServer().catch((error) => {
+  logger.error('Failed to start server', { error });
+  process.exit(1);
 });
 
 // Schedule cleanup of old/inactive sessions
@@ -2184,7 +2214,7 @@ logger.info('Session cleanup scheduler started', {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, closing server');
 
   // Stop cleanup scheduler
@@ -2207,13 +2237,17 @@ process.on('SIGTERM', () => {
     }
   }
 
+  // Disconnect Redis
+  await disconnectRedis();
+
   httpServer.close(() => {
     logger.info('Server closed');
     process.exit(0);
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   logger.info('SIGINT received, closing server');
+  await disconnectRedis();
   process.exit(0);
 });
