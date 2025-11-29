@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.5.0...triterm-v0.6.0) (2025-11-29)
+
+
+### Features
+
+* add admin user creation capability ([#13](https://github.com/vasandkumar/triterm/issues/13)) ([b69b02e](https://github.com/vasandkumar/triterm/commit/b69b02e04911e09a0a9ba7c877bfab0ab674e753))
+
 ## [0.5.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.4.0...triterm-v0.5.0) (2025-11-29)
 
 
