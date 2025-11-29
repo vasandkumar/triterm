@@ -462,6 +462,22 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       const deviceId = socket.data.device?.deviceId;
       const deviceName = socket.data.device?.deviceName;
 
+      // Check if user is active (if authenticated)
+      if (userId) {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { isActive: true },
+        });
+
+        if (!user || !user.isActive) {
+          logger.warn('Inactive user attempted to create terminal', { userId });
+          callback({
+            error: 'Account pending approval. Please contact administrator.',
+          });
+          return;
+        }
+      }
+
       // Check terminal limit
       if (currentCount >= MAX_TERMINALS) {
         callback({

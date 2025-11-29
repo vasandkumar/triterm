@@ -3,7 +3,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import {
   Users,
   Terminal,
-  Activity,
   Clock,
   TrendingUp,
   Database,

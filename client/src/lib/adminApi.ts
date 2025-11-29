@@ -169,3 +169,53 @@ export async function getSessions(activeOnly: boolean = false): Promise<Session[
 export async function getSystemStats(): Promise<SystemStats> {
   return fetchWithAuth(`${API_URL}/admin/stats`);
 }
+
+/**
+ * Get all users pending approval (isActive = false)
+ */
+export async function getPendingUsers(): Promise<User[]> {
+  return fetchWithAuth(`${API_URL}/admin/pending-users`);
+}
+
+/**
+ * Activate a user account
+ */
+export async function activateUser(userId: string): Promise<User> {
+  return fetchWithAuth(`${API_URL}/admin/users/${userId}/activate`, {
+    method: 'PATCH',
+  });
+}
+
+/**
+ * Deactivate a user account
+ */
+export async function deactivateUser(userId: string): Promise<User> {
+  return fetchWithAuth(`${API_URL}/admin/users/${userId}/deactivate`, {
+    method: 'PATCH',
+  });
+}
+
+/**
+ * Get system settings
+ */
+export interface SystemSettings {
+  id: string;
+  signupEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  updatedBy: string | null;
+}
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  return fetchWithAuth(`${API_URL}/admin/settings`);
+}
+
+/**
+ * Toggle signup enabled/disabled
+ */
+export async function toggleSignup(enabled: boolean): Promise<SystemSettings> {
+  return fetchWithAuth(`${API_URL}/admin/settings/signup`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+}

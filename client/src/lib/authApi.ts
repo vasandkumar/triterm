@@ -201,4 +201,25 @@ export async function getAvailableOAuthProviders(): Promise<string[]> {
   }
 }
 
+/**
+ * Check if signup is currently enabled
+ */
+export async function getSignupStatus(): Promise<{
+  signupEnabled: boolean;
+  isFirstUser: boolean;
+  message: string;
+}> {
+  const response = await api.get<{
+    success: boolean;
+    signupEnabled: boolean;
+    isFirstUser: boolean;
+    message: string;
+  }>('/api/auth/signup-status');
+  return {
+    signupEnabled: response.data.signupEnabled,
+    isFirstUser: response.data.isFirstUser,
+    message: response.data.message,
+  };
+}
+
 export { api };

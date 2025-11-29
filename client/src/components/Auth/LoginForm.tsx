@@ -6,10 +6,12 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 
 interface LoginFormProps {
-  onSwitchToRegister: () => void;
+  onSwitchToRegister?: () => void;
+  signupEnabled: boolean;
+  signupMessage: string;
 }
 
-export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
+export function LoginForm({ onSwitchToRegister, signupEnabled, signupMessage }: LoginFormProps) {
   const { login, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -154,16 +156,22 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         </>
       )}
 
-      <div className="text-center text-sm text-gray-400">
-        Don't have an account?{' '}
-        <button
-          onClick={onSwitchToRegister}
-          className="text-blue-400 hover:text-blue-300 font-medium"
-          disabled={loading}
-        >
-          Create Account
-        </button>
-      </div>
+      {signupEnabled && onSwitchToRegister ? (
+        <div className="text-center text-sm text-gray-400">
+          Don't have an account?{' '}
+          <button
+            onClick={onSwitchToRegister}
+            className="text-blue-400 hover:text-blue-300 font-medium"
+            disabled={loading}
+          >
+            Create Account
+          </button>
+        </div>
+      ) : (
+        <div className="text-center text-sm text-gray-400">
+          {signupMessage || 'Signup is currently disabled. Contact administrator for access.'}
+        </div>
+      )}
     </div>
   );
 }

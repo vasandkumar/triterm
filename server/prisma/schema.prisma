@@ -40,7 +40,7 @@ model User {
   username  String                @unique
   password  String                // bcrypt hashed password
   role      UserRole              @default(USER) // Role-based access control
-  isActive  Boolean               @default(true) // Account status
+  isActive  Boolean               @default(false) // Account status - inactive by default, admin must approve
   createdAt DateTime              @default(now())
   updatedAt DateTime              @updatedAt
   sessions  Session[]
@@ -259,4 +259,13 @@ model ShareAuditLog {
   @@index([action])
   @@index([createdAt])
   @@index([ipAddress])
+}
+
+// System-wide settings
+model SystemSettings {
+  id            String   @id @default("singleton") // Singleton pattern - only one row
+  signupEnabled Boolean  @default(false) // Signup disabled by default, enabled for first user only
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?  // Admin user ID who last updated settings
 }
