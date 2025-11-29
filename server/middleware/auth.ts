@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JWTPayload } from '../lib/jwt.js';
+import { getAccessTokenFromCookies } from '../lib/authCookies.js';
 import logger from '../config/logger.js';
 
 // Extend Express Request type to include user
@@ -13,17 +14,27 @@ declare global {
 
 /**
  * Middleware to verify JWT token and attach user to request
+ * Supports both httpOnly cookies (primary) and Authorization header (fallback)
  */
 export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
   try {
-    // Get token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token: string | undefined;
+
+    // Primary: Try to get token from httpOnly cookie
+    token = getAccessTokenFromCookies(req.cookies || {});
+
+    // Fallback: Try Authorization header (for backward compatibility / API clients)
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (!token) {
       res.status(401).json({ error: 'No token provided' });
       return;
     }
-
-    const token = authHeader.substring(7);
 
     // Verify token
     const payload = verifyToken(token);
@@ -49,9 +60,20 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
  */
 export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
   try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
+    let token: string | undefined;
+
+    // Primary: Try to get token from httpOnly cookie
+    token = getAccessTokenFromCookies(req.cookies || {});
+
+    // Fallback: Try Authorization header
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (token) {
       const payload = verifyToken(token);
       req.user = payload;
     }

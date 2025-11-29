@@ -53,10 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const response = await loginApi(data);
 
-      saveTokens({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-      });
+      // Tokens are now in httpOnly cookies (set by backend)
+      // No need to save to localStorage - more secure!
 
       setUser(response.user);
     } catch (err: unknown) {
@@ -75,10 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const response = await registerApi(data);
 
-      saveTokens({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-      });
+      // Tokens are now in httpOnly cookies (set by backend for first user)
+      // No need to save to localStorage - more secure!
 
       setUser(response.user);
     } catch (err: unknown) {
