@@ -1285,9 +1285,7 @@ function AuthenticatedApp({ user, logout }: { user: UserType | null; logout: () 
         {/* Footer */}
         <footer className="px-4 py-2 bg-card border-t text-xs text-muted-foreground flex items-center justify-between" role="contentinfo" aria-label="Application footer">
           <div className="flex items-center gap-4">
-            <span>TriTerm v1.0.0</span>
-            <Separator orientation="vertical" className="h-3" />
-            <span>Server: {isConnected ? 'localhost:3000' : 'Not connected'}</span>
+            <span>TriTerm</span>
           </div>
           <div>Built with React, Socket.io & xterm.js</div>
         </footer>
