@@ -79,16 +79,12 @@ function getCsrfToken(): string | null {
 }
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = getAccessToken();
-
-  if (!token) {
-    throw new Error('Authentication required');
-  }
+  // With httpOnly cookies, tokens are automatically sent in cookies
+  // No need to manually get from localStorage
 
   const csrfToken = getCsrfToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
     ...(options.headers as Record<string, string>),
   };
 
@@ -97,10 +93,17 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     headers['x-xsrf-token'] = csrfToken;
   }
 
+  // Fallback: Include Authorization header if token exists in localStorage
+  // (for backward compatibility during migration)
+  const token = getAccessToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     ...options,
     headers,
-    credentials: 'include', // Send cookies with requests
+    credentials: 'include', // CRITICAL: Send httpOnly cookies with requests
   });
 
   if (!response.ok) {

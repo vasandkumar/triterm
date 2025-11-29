@@ -19,6 +19,7 @@ import {
   registerRateLimiter,
   tokenRefreshRateLimiter,
 } from '../middleware/rateLimiter.js';
+import { setAuthCookies, clearAuthCookies, getRefreshTokenFromCookies } from '../lib/authCookies.js';
 
 const router = Router();
 
@@ -165,10 +166,12 @@ router.post('/register', registerRateLimiter, async (req: Request, res: Response
 
     // Return different responses based on user status
     if (isFirstUser) {
+      // Set tokens in httpOnly cookies for first user (auto-approved)
+      setAuthCookies(res, tokens);
+
       return res.status(201).json({
         success: true,
         user,
-        ...tokens,
       });
     } else {
       return res.status(201).json({
@@ -354,6 +357,9 @@ router.post('/login', loginRateLimiter, async (req: Request, res: Response) => {
 
     logger.info('User logged in', { userId: user.id, username: user.username, role: user.role });
 
+    // Set tokens in httpOnly cookies (secure, not accessible to JavaScript)
+    setAuthCookies(res, tokens);
+
     return res.json({
       success: true,
       user: {
@@ -361,9 +367,9 @@ router.post('/login', loginRateLimiter, async (req: Request, res: Response) => {
         email: user.email,
         username: user.username,
         role: user.role,
+        isActive: user.isActive,
         createdAt: user.createdAt,
       },
-      ...tokens,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -381,11 +387,15 @@ router.post('/login', loginRateLimiter, async (req: Request, res: Response) => {
  */
 router.post('/refresh', tokenRefreshRateLimiter, async (req: Request, res: Response) => {
   try {
-    // Validate request body
-    const validatedData = refreshTokenSchema.parse(req.body);
+    // Get refresh token from httpOnly cookie
+    const refreshToken = getRefreshTokenFromCookies(req.cookies || {});
+
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'No refresh token provided' });
+    }
 
     // Verify refresh token
-    const payload = verifyToken(validatedData.refreshToken);
+    const payload = verifyToken(refreshToken);
 
     // Verify user still exists and is active
     const user = await prisma.user.findUnique({
@@ -429,9 +439,11 @@ router.post('/refresh', tokenRefreshRateLimiter, async (req: Request, res: Respo
 
     logger.info('Token refreshed', { userId: user.id });
 
+    // Set new tokens in httpOnly cookies
+    setAuthCookies(res, tokens);
+
     return res.json({
       success: true,
-      ...tokens,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -500,33 +512,50 @@ router.get('/me', async (req: Request, res: Response) => {
  * Logout (client-side token deletion, placeholder for future session management)
  */
 router.post('/logout', async (req: Request, res: Response) => {
-  // For JWT, logout is handled client-side by deleting the token
-  // This endpoint can be used for logging purposes or future session management
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    try {
-      const payload = verifyToken(token);
+  try {
+    let token: string | undefined;
 
-      // Log audit event
-      await logAuditEvent({
-        userId: payload.userId,
-        action: AuditAction.LOGOUT,
-        resource: `user:${payload.userId}`,
-        ipAddress: getClientIp(req) || null,
-        userAgent: getUserAgent(req) || null,
-        metadata: {
-          username: payload.username,
-        },
-      });
-
-      logger.info('User logged out', { userId: payload.userId });
-    } catch {
-      // Invalid token, ignore
+    // Try to get token from cookie or header
+    token = getAccessTokenFromCookies(req.cookies || {});
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
-  }
 
-  res.json({ success: true, message: 'Logged out successfully' });
+    if (token) {
+      try {
+        const payload = verifyToken(token);
+
+        // Log audit event
+        await logAuditEvent({
+          userId: payload.userId,
+          action: AuditAction.LOGOUT,
+          resource: `user:${payload.userId}`,
+          ipAddress: getClientIp(req) || null,
+          userAgent: getUserAgent(req) || null,
+          metadata: {
+            username: payload.username,
+          },
+        });
+
+        logger.info('User logged out', { userId: payload.userId });
+      } catch {
+        // Invalid token, ignore but still clear cookies
+      }
+    }
+
+    // Clear authentication cookies
+    clearAuthCookies(res);
+
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    logger.error('Logout error', { error });
+    // Clear cookies even if there's an error
+    clearAuthCookies(res);
+    res.json({ success: true, message: 'Logged out successfully' });
+  }
 });
 
 /**
@@ -808,13 +837,11 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       },
     });
 
-    // Redirect to client with tokens
-    const redirectUrl = new URL(process.env.CLIENT_URL || 'http://localhost:5173');
-    redirectUrl.pathname = '/oauth-callback';
-    redirectUrl.searchParams.set('accessToken', tokens.accessToken);
-    redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
+    // Set tokens in httpOnly cookies (secure, not exposed in URL)
+    setAuthCookies(res, tokens);
 
-    return res.redirect(redirectUrl.toString());
+    // Redirect to client OAuth callback (tokens now in cookies)
+    return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/oauth-callback`);
   } catch (error) {
     logger.error('OAuth callback error', { error });
     return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=oauth_failed`);

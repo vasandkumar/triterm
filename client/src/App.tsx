@@ -12,7 +12,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Terminal as TerminalIcon, Plus, Settings, Info, Wifi, WifiOff, LogOut, User, LayoutGrid, PanelLeftDashed, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 import type { User as UserType } from './lib/authApi';
-import { saveTokens } from './lib/tokenStorage';
 import { getCurrentUser } from './lib/authApi';
 import { AdminDashboard } from './pages/Admin/AdminDashboard';
 
@@ -62,11 +61,10 @@ function OAuthCallbackHandler() {
   useEffect(() => {
     async function handleOAuthCallback() {
       try {
-        // Get tokens from URL
+        // Check for error in URL
         const urlParams = new URLSearchParams(window.location.search);
-        const accessToken = urlParams.get('accessToken');
-        const refreshToken = urlParams.get('refreshToken');
         const error = urlParams.get('error');
+        const pendingApproval = urlParams.get('pendingApproval');
 
         if (error) {
           setStatus('error');
@@ -77,18 +75,16 @@ function OAuthCallbackHandler() {
           return;
         }
 
-        if (!accessToken || !refreshToken) {
+        if (pendingApproval) {
           setStatus('error');
-          setErrorMessage('Invalid OAuth response. Missing tokens.');
+          setErrorMessage('Account created successfully. Your account is pending admin approval.');
           setTimeout(() => {
             window.location.href = '/';
           }, 3000);
           return;
         }
 
-        // Save tokens
-        saveTokens({ accessToken, refreshToken });
-
+        // Tokens are now in httpOnly cookies (set by backend)
         // Verify authentication by fetching user
         await getCurrentUser();
 

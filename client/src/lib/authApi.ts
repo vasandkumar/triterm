@@ -46,18 +46,21 @@ function getCsrfToken(): string | null {
   return null;
 }
 
-// Request interceptor to add auth token and CSRF token
+// Request interceptor to add CSRF token and fallback auth token
 api.interceptors.request.use(
   (config) => {
-    const token = getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
     // Add CSRF token for state-changing requests
     const csrfToken = getCsrfToken();
     if (csrfToken) {
       config.headers['x-xsrf-token'] = csrfToken;
+    }
+
+    // Fallback: Add Authorization header if token exists in localStorage
+    // (for backward compatibility during migration)
+    // With httpOnly cookies, tokens are automatically sent
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
     return config;
@@ -71,29 +74,25 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config;
 
-    // If 401 and we have a refresh token, try to refresh
+    // If 401, try to refresh token (cookies-based)
     if (error.response?.status === 401 && originalRequest && !originalRequest.headers['X-Retry']) {
-      const refreshToken = getRefreshToken();
+      try {
+        // Call refresh endpoint (refresh token sent automatically via httpOnly cookie)
+        await axios.post(
+          `${API_BASE_URL}/api/auth/refresh`,
+          {},
+          { withCredentials: true } // Include cookies
+        );
 
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
-            refreshToken,
-          });
-
-          const { accessToken, refreshToken: newRefreshToken } = response.data;
-          saveTokens({ accessToken, refreshToken: newRefreshToken });
-
-          // Retry original request with new token
-          originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
-          originalRequest.headers['X-Retry'] = 'true';
-          return api(originalRequest);
-        } catch (refreshError) {
-          // Refresh failed, clear tokens
-          clearTokens();
-          window.location.href = '/';
-          return Promise.reject(refreshError);
-        }
+        // Refresh succeeded, new tokens are now in cookies
+        // Retry original request
+        originalRequest.headers['X-Retry'] = 'true';
+        return api(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed, clear any localStorage tokens and redirect to login
+        clearTokens();
+        window.location.href = '/';
+        return Promise.reject(refreshError);
       }
     }
 
@@ -124,8 +123,8 @@ export interface LoginData {
 export interface AuthResponse {
   success: boolean;
   user: User;
-  accessToken: string;
-  refreshToken: string;
+  // Tokens are now in httpOnly cookies, not in response body
+  // accessToken and refreshToken fields removed for security
 }
 
 export interface ErrorResponse {
