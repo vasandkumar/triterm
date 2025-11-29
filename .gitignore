@@ -67,6 +67,7 @@ e2e/test-results/
 
 # Claude Code Local Settings
 .claude/settings.local.json
+CLAUDE.md
 
 # Client Dev Build
 client/dev-dist/
