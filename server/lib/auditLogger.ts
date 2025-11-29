@@ -20,9 +20,12 @@ export interface AuditLogData {
 export enum AuditAction {
   // Authentication
   LOGIN = 'auth.login',
+  LOGIN_FAILED = 'auth.login_failed',
   LOGOUT = 'auth.logout',
   REGISTER = 'auth.register',
   PASSWORD_CHANGE = 'auth.password_change',
+  ACCOUNT_LOCKED = 'auth.account_locked',
+  TOKEN_REFRESH = 'auth.token_refresh',
 
   // Terminal Operations
   TERMINAL_CREATE = 'terminal.create',

@@ -27,8 +27,8 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Badge } from '../../components/ui/badge';
-import { Users, Shield, UserX, AlertCircle, RefreshCw } from 'lucide-react';
-import { getAllUsers, updateUserRole, deleteUser } from '../../lib/adminApi';
+import { Users, Shield, UserX, AlertCircle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { getAllUsers, updateUserRole, deleteUser, activateUser, deactivateUser } from '../../lib/adminApi';
 import type { User } from '../../lib/adminApi';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -40,6 +40,7 @@ export function UserManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [togglingStatus, setTogglingStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -85,6 +86,38 @@ export function UserManagement() {
       setUserToDelete(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete user');
+    }
+  };
+
+  const handleActivate = async (userId: string) => {
+    if (!confirm('Are you sure you want to activate this user? They will be able to login and create terminals.')) {
+      return;
+    }
+
+    try {
+      setTogglingStatus(userId);
+      const updatedUser = await activateUser(userId);
+      setUsers(users.map(u => u.id === userId ? updatedUser : u));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to activate user');
+    } finally {
+      setTogglingStatus(null);
+    }
+  };
+
+  const handleDeactivate = async (userId: string) => {
+    if (!confirm('Are you sure you want to deactivate this user? They will not be able to login or create terminals.')) {
+      return;
+    }
+
+    try {
+      setTogglingStatus(userId);
+      const updatedUser = await deactivateUser(userId);
+      setUsers(users.map(u => u.id === userId ? updatedUser : u));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to deactivate user');
+    } finally {
+      setTogglingStatus(null);
     }
   };
 
@@ -211,15 +244,41 @@ export function UserManagement() {
                         {formatDate(user.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => confirmDelete(user)}
-                          disabled={user.id === currentUser?.id}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <UserX className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          {user.isActive ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeactivate(user.id)}
+                              disabled={user.id === currentUser?.id || togglingStatus === user.id}
+                              className="text-orange-500 hover:text-orange-600"
+                              title="Deactivate user"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleActivate(user.id)}
+                              disabled={togglingStatus === user.id}
+                              className="text-green-500 hover:text-green-600"
+                              title="Activate user"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => confirmDelete(user)}
+                            disabled={user.id === currentUser?.id}
+                            className="text-destructive hover:text-destructive"
+                            title="Delete user"
+                          >
+                            <UserX className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

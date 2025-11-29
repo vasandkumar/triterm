@@ -9,6 +9,16 @@ import { oauthService } from '../lib/oauthProviders.js';
 import logger from '../config/logger.js';
 import { logAuditEvent, AuditAction, getClientIp, getUserAgent } from '../lib/auditLogger.js';
 import { encryptToken, decryptToken } from '../lib/encryption.js';
+import {
+  isAccountLocked,
+  recordFailedAttempt,
+  clearLoginAttempts,
+} from '../lib/loginAttempts.js';
+import {
+  loginRateLimiter,
+  registerRateLimiter,
+  tokenRefreshRateLimiter,
+} from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -30,10 +40,29 @@ setInterval(() => {
  * POST /api/auth/register
  * Register a new user
  */
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', registerRateLimiter, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const validatedData = registerSchema.parse(req.body);
+
+    // Check if this is the first user
+    const userCount = await prisma.user.count();
+    const isFirstUser = userCount === 0;
+
+    // Check if signup is enabled (only for non-first users)
+    if (!isFirstUser) {
+      // Get system settings
+      const settings = await prisma.systemSettings.findUnique({
+        where: { id: 'singleton' },
+      });
+
+      if (!settings || !settings.signupEnabled) {
+        return res.status(403).json({
+          error: 'Signup is currently disabled',
+          message: 'New user registration is disabled. Please contact the administrator for access.',
+        });
+      }
+    }
 
     // Check if user already exists
     const existingUser = await prisma.user.findFirst({
@@ -43,42 +72,72 @@ router.post('/register', async (req: Request, res: Response) => {
     });
 
     if (existingUser) {
-      if (existingUser.email === validatedData.email) {
-        return res.status(400).json({ error: 'Email already registered' });
-      }
-      return res.status(400).json({ error: 'Username already taken' });
+      // Generic error message to prevent user enumeration
+      // Don't reveal whether email or username is taken
+      logger.warn('Registration attempt with existing credentials', {
+        email: validatedData.email,
+        username: validatedData.username,
+        conflictType: existingUser.email === validatedData.email ? 'email' : 'username',
+      });
+
+      return res.status(400).json({
+        error: 'Registration failed',
+        message: 'An account with these credentials already exists. If you already have an account, please login instead.',
+      });
     }
 
     // Hash password
     const hashedPassword = await hashPassword(validatedData.password);
 
-    // Create user (first user is admin, rest are regular users)
-    const userCount = await prisma.user.count();
-    const isFirstUser = userCount === 0;
-
+    // Create user
+    // First user: admin role, active immediately
+    // Other users: user role, inactive until admin approves
     const user = await prisma.user.create({
       data: {
         email: validatedData.email,
         username: validatedData.username,
         password: hashedPassword,
-        role: isFirstUser ? 'ADMIN' : 'USER', // First user gets admin role
+        role: isFirstUser ? 'ADMIN' : 'USER',
+        isActive: isFirstUser, // Only first user is active immediately
       },
       select: {
         id: true,
         email: true,
         username: true,
         role: true,
+        isActive: true,
         createdAt: true,
       },
     });
 
-    // Generate tokens
-    const tokens = generateTokenPair({
-      userId: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-    });
+    // If first user, create system settings and disable signup
+    if (isFirstUser) {
+      await prisma.systemSettings.upsert({
+        where: { id: 'singleton' },
+        create: {
+          id: 'singleton',
+          signupEnabled: false, // Disable signup after first user
+          updatedBy: user.id,
+        },
+        update: {
+          signupEnabled: false,
+          updatedBy: user.id,
+        },
+      });
+
+      logger.info('First user registered - signup disabled', { userId: user.id });
+    }
+
+    // Generate tokens only for active users (first user)
+    // Non-active users will get tokens after admin approval
+    const tokens = isFirstUser
+      ? generateTokenPair({
+          userId: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        })
+      : { accessToken: null, refreshToken: null };
 
     // Log audit event
     await logAuditEvent({
@@ -91,16 +150,34 @@ router.post('/register', async (req: Request, res: Response) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        isActive: user.isActive,
+        isFirstUser,
       },
     });
 
-    logger.info('User registered', { userId: user.id, username: user.username, email: user.email });
-
-    return res.status(201).json({
-      success: true,
-      user,
-      ...tokens,
+    logger.info('User registered', {
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      isActive: user.isActive,
+      isFirstUser,
     });
+
+    // Return different responses based on user status
+    if (isFirstUser) {
+      return res.status(201).json({
+        success: true,
+        user,
+        ...tokens,
+      });
+    } else {
+      return res.status(201).json({
+        success: true,
+        user,
+        message: 'Account created successfully. Your account is pending admin approval. You will be able to login once approved.',
+        pendingApproval: true,
+      });
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation error', details: error.issues });
@@ -115,10 +192,25 @@ router.post('/register', async (req: Request, res: Response) => {
  * POST /api/auth/login
  * Login with email and password
  */
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', loginRateLimiter, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const validatedData = loginSchema.parse(req.body);
+
+    // Check if account is locked due to too many failed attempts
+    const lockStatus = isAccountLocked(validatedData.email);
+    if (lockStatus.locked) {
+      logger.warn('Login attempt on locked account', {
+        email: validatedData.email,
+        remainingSeconds: lockStatus.remainingSeconds,
+      });
+
+      return res.status(429).json({
+        error: 'Account temporarily locked',
+        message: 'Too many failed login attempts. Please try again later.',
+        retryAfter: lockStatus.remainingSeconds,
+      });
+    }
 
     // Find user
     const user = await prisma.user.findUnique({
@@ -135,22 +227,108 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      // Record failed attempt (user not found)
+      const attemptResult = recordFailedAttempt(validatedData.email);
+
+      // Log failed attempt
+      await logAuditEvent({
+        userId: null,
+        action: AuditAction.LOGIN_FAILED,
+        resource: 'auth:login',
+        ipAddress: getClientIp(req) || null,
+        userAgent: getUserAgent(req) || null,
+        metadata: {
+          email: validatedData.email,
+          reason: 'user_not_found',
+          attemptsRemaining: attemptResult.attemptsRemaining,
+        },
+      });
+
+      logger.warn('Failed login attempt - user not found', { email: validatedData.email });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Check if account is active
     if (!user.isActive) {
       logger.warn('Inactive account login attempt', { email: validatedData.email });
-      return res.status(403).json({ error: 'Account is deactivated' });
+
+      await logAuditEvent({
+        userId: user.id,
+        action: AuditAction.LOGIN_FAILED,
+        resource: `user:${user.id}`,
+        ipAddress: getClientIp(req) || null,
+        userAgent: getUserAgent(req) || null,
+        metadata: {
+          email: validatedData.email,
+          reason: 'account_inactive',
+        },
+      });
+
+      return res.status(403).json({
+        error: 'Account is pending approval or has been deactivated',
+      });
     }
 
     // Verify password
     const isValidPassword = await comparePassword(validatedData.password, user.password);
 
     if (!isValidPassword) {
-      logger.warn('Failed login attempt', { email: validatedData.email });
-      return res.status(401).json({ error: 'Invalid email or password' });
+      // Record failed attempt
+      const attemptResult = recordFailedAttempt(validatedData.email);
+
+      // Log failed attempt
+      await logAuditEvent({
+        userId: user.id,
+        action: AuditAction.LOGIN_FAILED,
+        resource: `user:${user.id}`,
+        ipAddress: getClientIp(req) || null,
+        userAgent: getUserAgent(req) || null,
+        metadata: {
+          email: validatedData.email,
+          reason: 'invalid_password',
+          attemptsRemaining: attemptResult.attemptsRemaining,
+          locked: attemptResult.locked,
+        },
+      });
+
+      // If account is now locked, log lockout event
+      if (attemptResult.locked) {
+        await logAuditEvent({
+          userId: user.id,
+          action: AuditAction.ACCOUNT_LOCKED,
+          resource: `user:${user.id}`,
+          ipAddress: getClientIp(req) || null,
+          userAgent: getUserAgent(req) || null,
+          metadata: {
+            email: validatedData.email,
+            lockoutDuration: attemptResult.lockoutDuration,
+            reason: 'too_many_failed_attempts',
+          },
+        });
+
+        logger.warn('Account locked due to failed login attempts', {
+          userId: user.id,
+          email: validatedData.email,
+        });
+
+        return res.status(429).json({
+          error: 'Account temporarily locked',
+          message: 'Too many failed login attempts. Please try again later.',
+          retryAfter: attemptResult.lockoutDuration,
+        });
+      }
+
+      logger.warn('Failed login attempt - invalid password', {
+        userId: user.id,
+        email: validatedData.email,
+        attemptsRemaining: attemptResult.attemptsRemaining,
+      });
+
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    // Clear any failed login attempts on successful login
+    clearLoginAttempts(validatedData.email);
 
     // Generate tokens
     const tokens = generateTokenPair({
@@ -201,7 +379,7 @@ router.post('/login', async (req: Request, res: Response) => {
  * POST /api/auth/refresh
  * Refresh access token using refresh token
  */
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', tokenRefreshRateLimiter, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const validatedData = refreshTokenSchema.parse(req.body);
@@ -352,6 +530,45 @@ router.post('/logout', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/auth/signup-status
+ * Check if signup is currently enabled
+ */
+router.get('/signup-status', async (req: Request, res: Response) => {
+  try {
+    // Check if any users exist
+    const userCount = await prisma.user.count();
+    const isFirstUser = userCount === 0;
+
+    // If no users exist, signup is always enabled for first user
+    if (isFirstUser) {
+      return res.json({
+        success: true,
+        signupEnabled: true,
+        isFirstUser: true,
+        message: 'Create your admin account to get started',
+      });
+    }
+
+    // Get system settings
+    const settings = await prisma.systemSettings.findUnique({
+      where: { id: 'singleton' },
+    });
+
+    return res.json({
+      success: true,
+      signupEnabled: settings?.signupEnabled || false,
+      isFirstUser: false,
+      message: settings?.signupEnabled
+        ? 'Signup is currently enabled'
+        : 'Signup is currently disabled. Contact administrator for access.',
+    });
+  } catch (error) {
+    logger.error('Error checking signup status', { error });
+    return res.status(500).json({ error: 'Failed to check signup status' });
+  }
+});
+
+/**
  * GET /api/auth/oauth/providers
  * Get list of available OAuth providers
  */
@@ -497,9 +714,22 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         });
       }
     } else {
-      // Create new user
+      // Create new user via OAuth
       const userCount = await prisma.user.count();
       const isFirstUser = userCount === 0;
+
+      // Check if signup is enabled (only for non-first users)
+      if (!isFirstUser) {
+        const settings = await prisma.systemSettings.findUnique({
+          where: { id: 'singleton' },
+        });
+
+        if (!settings || !settings.signupEnabled) {
+          return res.redirect(
+            `${process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=signup_disabled`
+          );
+        }
+      }
 
       user = await prisma.user.create({
         data: {
@@ -507,6 +737,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
           username: oauthUser.name || oauthUser.email.split('@')[0],
           password: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password for OAuth users
           role: isFirstUser ? 'ADMIN' : 'USER',
+          isActive: isFirstUser, // Only first user is active immediately
           oauthProviders: {
             create: {
               provider,
@@ -521,11 +752,36 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         },
       });
 
+      // If first user, disable signup
+      if (isFirstUser) {
+        await prisma.systemSettings.upsert({
+          where: { id: 'singleton' },
+          create: {
+            id: 'singleton',
+            signupEnabled: false,
+            updatedBy: user.id,
+          },
+          update: {
+            signupEnabled: false,
+            updatedBy: user.id,
+          },
+        });
+      }
+
       logger.info('User created via OAuth', {
         userId: user.id,
         provider,
         email: user.email,
+        isActive: user.isActive,
+        isFirstUser,
       });
+
+      // If user is not active (pending approval), redirect with pending message
+      if (!user.isActive) {
+        return res.redirect(
+          `${process.env.CLIENT_URL || 'http://localhost:5173'}/login?pendingApproval=true`
+        );
+      }
     }
 
     // Generate JWT tokens

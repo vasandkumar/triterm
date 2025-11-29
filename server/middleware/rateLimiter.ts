@@ -51,6 +51,79 @@ function rateLimitHandler(req: Request, res: Response) {
 }
 
 /**
+ * Authentication Rate Limiters
+ * Stricter limits for login/register to prevent brute force attacks
+ */
+
+/**
+ * Login Rate Limiter
+ * Limits: 5 login attempts per 15 minutes per email/IP
+ * Works in conjunction with account lockout (after 5 failed attempts)
+ */
+export const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Allow up to 10 login attempts (successful or failed)
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false, // Count all attempts
+  keyGenerator: (req: Request) => {
+    // Rate limit by email if provided, otherwise by IP
+    const email = req.body?.email;
+    const ip = getIdentifier(req);
+    return email ? `login:${email.toLowerCase()}` : ip;
+  },
+  handler: rateLimitHandler,
+  message: 'Too many login attempts. Please try again later.',
+});
+
+/**
+ * Registration Rate Limiter
+ * Limits: 3 registrations per hour per IP
+ * Prevents spam account creation
+ */
+export const registerRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3, // Only 3 registrations per hour per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getIdentifier, // By IP address
+  handler: rateLimitHandler,
+  message: 'Too many registration attempts. Please try again later.',
+});
+
+/**
+ * Token Refresh Rate Limiter
+ * Limits: 10 token refreshes per minute per user
+ * Prevents token refresh abuse
+ */
+export const tokenRefreshRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getIdentifier,
+  handler: rateLimitHandler,
+  message: 'Too many token refresh requests. Please try again later.',
+});
+
+/**
+ * Password Reset Rate Limiter (for future implementation)
+ * Limits: 3 password reset requests per hour per email
+ */
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const email = req.body?.email;
+    return email ? `reset:${email.toLowerCase()}` : getIdentifier(req);
+  },
+  handler: rateLimitHandler,
+  message: 'Too many password reset requests. Please try again later.',
+});
+
+/**
  * Share Link Creation Rate Limiter
  * Limits: 10 share links per hour per user
  */

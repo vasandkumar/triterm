@@ -10,13 +10,15 @@ import {
   FileText,
   ArrowLeft,
   BarChart3,
-  Settings
+  Settings,
+  UserCheck
 } from 'lucide-react';
 import { UserManagement } from './UserManagement';
 import { SystemStats } from './SystemStats';
 import { AuditLogs } from './AuditLogs';
 import { SessionMonitor } from './SessionMonitor';
 import { SystemSettings } from './SystemSettings';
+import { UserApproval } from './UserApproval';
 
 export function AdminDashboard() {
   const { user } = useAuth();
@@ -83,10 +85,14 @@ export function AdminDashboard() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-8">
+          <TabsList className="grid w-full grid-cols-6 mb-8">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
+            </TabsTrigger>
+            <TabsTrigger value="approval" className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">Approvals</span>
             </TabsTrigger>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -108,6 +114,10 @@ export function AdminDashboard() {
 
           <TabsContent value="overview">
             <SystemStats />
+          </TabsContent>
+
+          <TabsContent value="approval">
+            <UserApproval />
           </TabsContent>
 
           <TabsContent value="users">

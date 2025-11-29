@@ -293,4 +293,203 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/pending-users
+ * Get all users pending approval (isActive = false)
+ */
+router.get('/pending-users', async (req, res) => {
+  try {
+    const pendingUsers = await prisma.user.findMany({
+      where: {
+        isActive: false,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.json(pendingUsers);
+  } catch (error) {
+    console.error('Error fetching pending users:', error);
+    res.status(500).json({ error: 'Failed to fetch pending users' });
+  }
+});
+
+/**
+ * PATCH /api/admin/users/:id/activate
+ * Activate a user account
+ */
+router.patch('/users/:id/activate', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { isActive: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Log the action
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: 'ACTIVATE_USER',
+      resource: `user:${id}`,
+      ipAddress: req.ip || null,
+      userAgent: req.get('user-agent') || null,
+      metadata: {
+        targetUserId: id,
+        targetUsername: user.username,
+        targetEmail: user.email,
+      },
+    });
+
+    res.json(user);
+  } catch (error: any) {
+    console.error('Error activating user:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(500).json({ error: 'Failed to activate user' });
+  }
+});
+
+/**
+ * PATCH /api/admin/users/:id/deactivate
+ * Deactivate a user account
+ */
+router.patch('/users/:id/deactivate', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Prevent deactivating own account
+    if (id === req.user?.userId) {
+      return res.status(403).json({ error: 'Cannot deactivate your own account' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { isActive: false },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Log the action
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: 'DEACTIVATE_USER',
+      resource: `user:${id}`,
+      ipAddress: req.ip || null,
+      userAgent: req.get('user-agent') || null,
+      metadata: {
+        targetUserId: id,
+        targetUsername: user.username,
+        targetEmail: user.email,
+      },
+    });
+
+    res.json(user);
+  } catch (error: any) {
+    console.error('Error deactivating user:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(500).json({ error: 'Failed to deactivate user' });
+  }
+});
+
+/**
+ * GET /api/admin/settings
+ * Get system settings
+ */
+router.get('/settings', async (req, res) => {
+  try {
+    let settings = await prisma.systemSettings.findUnique({
+      where: { id: 'singleton' },
+    });
+
+    // If settings don't exist, create default
+    if (!settings) {
+      settings = await prisma.systemSettings.create({
+        data: {
+          id: 'singleton',
+          signupEnabled: false,
+        },
+      });
+    }
+
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ error: 'Failed to fetch system settings' });
+  }
+});
+
+/**
+ * PATCH /api/admin/settings/signup
+ * Toggle signup enabled/disabled
+ */
+router.patch('/settings/signup', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+
+    const settings = await prisma.systemSettings.upsert({
+      where: { id: 'singleton' },
+      create: {
+        id: 'singleton',
+        signupEnabled: enabled,
+        updatedBy: req.user!.userId,
+      },
+      update: {
+        signupEnabled: enabled,
+        updatedBy: req.user!.userId,
+      },
+    });
+
+    // Log the action
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: enabled ? 'ENABLE_SIGNUP' : 'DISABLE_SIGNUP',
+      resource: 'system:settings',
+      ipAddress: req.ip || null,
+      userAgent: req.get('user-agent') || null,
+      metadata: {
+        signupEnabled: enabled,
+      },
+    });
+
+    res.json(settings);
+  } catch (error) {
+    console.error('Error updating signup settings:', error);
+    res.status(500).json({ error: 'Failed to update signup settings' });
+  }
+});
+
 export default router;

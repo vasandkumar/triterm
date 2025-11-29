@@ -6,9 +6,10 @@ import { Label } from '../ui/label';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
+  isFirstUser: boolean;
 }
 
-export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+export function RegisterForm({ onSwitchToLogin, isFirstUser }: RegisterFormProps) {
   const { register, error, loading, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -69,8 +70,14 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   return (
     <div className="w-full max-w-md p-8 space-y-6 bg-gray-900 border border-gray-800 rounded-lg">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-white">Create TriTerm Account</h2>
-        <p className="mt-2 text-sm text-gray-400">Sign up to start using web terminals</p>
+        <h2 className="text-2xl font-bold text-white">
+          {isFirstUser ? 'Create Admin Account' : 'Create TriTerm Account'}
+        </h2>
+        <p className="mt-2 text-sm text-gray-400">
+          {isFirstUser
+            ? 'Set up your administrator account to get started'
+            : 'Sign up to start using web terminals'}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">

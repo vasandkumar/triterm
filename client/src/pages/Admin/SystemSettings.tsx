@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Switch } from '../../components/ui/switch';
 import {
   Server,
   Database,
@@ -9,17 +10,23 @@ import {
   RefreshCw,
   Clock,
   Settings2,
+  UserPlus,
+  ShieldCheck,
 } from 'lucide-react';
-import { getSystemStats } from '../../lib/adminApi';
-import type { SystemStats } from '../../lib/adminApi';
+import { getSystemStats, getSystemSettings, toggleSignup } from '../../lib/adminApi';
+import type { SystemStats, SystemSettings as SystemSettingsType } from '../../lib/adminApi';
 
 export function SystemSettings() {
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [settings, setSettings] = useState<SystemSettingsType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
     loadStats();
+    loadSettings();
   }, []);
 
   const loadStats = async () => {
@@ -31,6 +38,40 @@ export function SystemSettings() {
       setError(err instanceof Error ? err.message : 'Failed to load system stats');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const data = await getSystemSettings();
+      setSettings(data);
+    } catch (err) {
+      console.error('Failed to load system settings:', err);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleToggleSignup = async () => {
+    if (!settings) return;
+
+    const newValue = !settings.signupEnabled;
+    const confirmMessage = newValue
+      ? 'Enable user signup? New users will be able to register (pending admin approval).'
+      : 'Disable user signup? New users will not be able to register.';
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setToggling(true);
+      const updated = await toggleSignup(newValue);
+      setSettings(updated);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to toggle signup');
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -93,6 +134,68 @@ export function SystemSettings() {
 
   return (
     <div className="space-y-6">
+      {/* User Signup Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5" />
+            User Signup
+          </CardTitle>
+          <CardDescription>
+            Control whether new users can register accounts
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {settingsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-medium">Enable Signup</h4>
+                    <Badge variant={settings?.signupEnabled ? 'default' : 'secondary'}>
+                      {settings?.signupEnabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {settings?.signupEnabled
+                      ? 'New users can register. Accounts require admin approval before activation.'
+                      : 'New user registration is disabled. Only admins can create accounts.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.signupEnabled || false}
+                  onCheckedChange={handleToggleSignup}
+                  disabled={toggling}
+                />
+              </div>
+
+              <div className="p-4 border rounded-lg bg-blue-900/10 border-blue-800/50">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="h-5 w-5 text-blue-400 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-blue-400">Security Note</p>
+                    <p className="text-sm text-gray-400">
+                      All new user registrations require admin approval before accounts are activated.
+                      Users cannot create terminals or access the system until approved.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {settings?.updatedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Last updated: {new Date(settings.updatedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Server Information */}
       <Card>
         <CardHeader>
