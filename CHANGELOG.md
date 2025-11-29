@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.4.0...triterm-v0.5.0) (2025-11-29)
+
+
+### Features
+
+* comprehensive security hardening (Phase 2/3) ([#11](https://github.com/vasandkumar/triterm/issues/11)) ([607a88b](https://github.com/vasandkumar/triterm/commit/607a88b98ce93dac3789fadb336d0e6207aa3a4b))
+
 ## [0.4.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.3.0...triterm-v0.4.0) (2025-11-29)
 
 
