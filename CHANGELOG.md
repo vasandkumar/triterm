@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.3.0...triterm-v0.4.0) (2025-11-29)
+
+
+### Features
+
+* implement JWT token revocation system ([#9](https://github.com/vasandkumar/triterm/issues/9)) ([68dbd91](https://github.com/vasandkumar/triterm/commit/68dbd915f43ffe517abd371d6fcfa7005f2a3aa9))
+
 ## [0.3.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.2.1...triterm-v0.3.0) (2025-11-29)
 
 
