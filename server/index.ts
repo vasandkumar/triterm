@@ -171,37 +171,68 @@ const httpServer = createServer(app);
 // Configure trust proxy - only trust proxy in production
 app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 
-// Security middleware
+// Security middleware - Enhanced helmet configuration
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline needed for dev, remove in production
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", process.env.NODE_ENV === 'development' ? "'unsafe-inline'" : "'none'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline for CSS-in-JS libraries
         imgSrc: ["'self'", 'data:', 'https:'],
         connectSrc: ["'self'", 'ws:', 'wss:'],
-        fontSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
       },
     },
     hsts: {
-      maxAge: 31536000,
+      maxAge: 31536000, // 1 year
       includeSubDomains: true,
       preload: true,
     },
     frameguard: {
-      action: 'deny',
+      action: 'deny', // Prevent clickjacking
     },
     xssFilter: true,
-    noSniff: true,
+    noSniff: true, // Prevent MIME-type sniffing
     referrerPolicy: {
-      policy: 'same-origin',
+      policy: 'strict-origin-when-cross-origin', // Better privacy
+    },
+    // Disable dangerous features
+    permittedCrossDomainPolicies: {
+      permittedPolicies: 'none',
+    },
+    dnsPrefetchControl: {
+      allow: false,
     },
   })
 );
+
+// Additional security headers
+app.use((req, res, next) => {
+  // Permissions Policy - Restrict browser features
+  res.setHeader(
+    'Permissions-Policy',
+    'geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()'
+  );
+
+  // X-Content-Type-Options (redundant with helmet but explicit)
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // X-Download-Options for IE
+  res.setHeader('X-Download-Options', 'noopen');
+
+  // X-Permitted-Cross-Domain-Policies
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+
+  next();
+});
 
 // CORS configuration - whitelist allowed origins from environment
 app.use(
@@ -231,7 +262,18 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-app.use(express.json());
+
+// Request size limits - Prevent DoS attacks
+app.use(express.json({
+  limit: '1mb', // Maximum request body size
+  strict: true, // Only accept arrays and objects
+}));
+app.use(express.urlencoded({
+  extended: true,
+  limit: '1mb',
+  parameterLimit: 100, // Maximum number of parameters
+}));
+
 app.use(cookieParser());
 app.use(csrfCookieMiddleware);
 

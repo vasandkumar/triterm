@@ -31,13 +31,28 @@ TriTerm brings the power of your terminal to the browser with enterprise feature
 
 ### Authentication & Security
 
-- ✅ **User registration and login** with JWT tokens
-- ✅ **OAuth support** (GitHub, Google, GitLab ready)
-- ✅ **Role-based access control** (Admin, User roles)
-- ✅ **Password hashing** with bcrypt
+#### Core Authentication
+
+- ✅ **JWT-based authentication** with httpOnly cookies (XSS protection)
+- ✅ **OAuth 2.0 support** (GitHub, Google, GitLab)
+- ✅ **Role-based access control** (Admin, User, Viewer roles)
+- ✅ **Password hashing** with bcrypt (12 rounds)
+- ✅ **User approval system** (admin-controlled registration)
 - ✅ **Session management** with database persistence
-- ✅ **Audit logging** for all authentication events
-- ✅ **CORS and rate limiting** protection
+
+#### Security Hardening
+
+- ✅ **Enhanced security headers** (CSP, HSTS, X-Frame-Options, Permissions-Policy)
+- ✅ **Request size limits** (DoS protection)
+- ✅ **Password complexity enforcement** (12+ chars, uppercase, lowercase, numbers, special characters)
+- ✅ **Common password blocking** (weak password prevention)
+- ✅ **Account lockout** (5 failed attempts = 15 min lockout)
+- ✅ **JWT token revocation** (immediate logout support)
+- ✅ **Session timeout enforcement** (15min access token, 7 day refresh, 30 day absolute)
+- ✅ **CSRF protection** (double-submit cookie pattern)
+- ✅ **Rate limiting** (endpoint-specific throttling)
+- ✅ **User enumeration prevention** (generic error messages)
+- ✅ **Audit logging** (comprehensive security event tracking)
 
 ### Admin Dashboard
 
@@ -470,46 +485,244 @@ server {
 }
 ```
 
-## 🔒 Security Best Practices
+## 🔒 Security Features & Best Practices
 
-### For Production Deployment
+TriTerm implements enterprise-grade security measures aligned with OWASP Top 10 2021 security standards.
 
-1. **Change JWT_SECRET** - Use a strong random string
+### Built-in Security Features
 
-   ```bash
-   # Generate a secure secret
-   openssl rand -base64 64
-   ```
+#### 🛡️ Authentication Security
 
-2. **Use HTTPS** - Always use SSL/TLS in production
+**JWT Token Security**
 
-3. **Set strong passwords** - Enforce password complexity
+- ✅ httpOnly cookies (immune to XSS attacks)
+- ✅ Secure flag (HTTPS-only in production)
+- ✅ SameSite=Strict (CSRF protection)
+- ✅ Token revocation system (immediate logout)
+- ✅ 15-minute access token expiration
+- ✅ 7-day refresh token expiration
+- ✅ 30-day absolute session timeout
+- ✅ Unique JWT IDs for tracking
 
-4. **Configure CORS** - Limit allowed origins
+**Password Security**
 
-   ```env
-   ALLOWED_ORIGINS=https://yourdomain.com
-   ```
+- ✅ Minimum 12 characters required
+- ✅ Complexity requirements (uppercase, lowercase, numbers, special chars)
+- ✅ Common password blocking
+- ✅ Bcrypt hashing (12 rounds)
+- ✅ Maximum 128 characters (DoS prevention)
+- ✅ No sequential identical characters
 
-5. **Enable rate limiting** - Prevent abuse
+**Account Protection**
 
-   ```env
-   RATE_LIMIT_MAX=50
-   RATE_LIMIT_WINDOW=60000
-   ```
+- ✅ Account lockout: 5 failed attempts = 15 min lockout
+- ✅ User approval system (admin-controlled)
+- ✅ Generic error messages (prevents user enumeration)
+- ✅ Comprehensive audit logging
 
-6. **Use PostgreSQL** - SQLite is for development only
+#### 🔐 Application Security
 
-7. **Regular backups** - Use provided backup scripts
+**Security Headers**
 
-   ```bash
-   ./scripts/backup.sh
-   ```
+```
+Content-Security-Policy: Restrictive CSP policy
+Strict-Transport-Security: 1 year with preload
+X-Frame-Options: DENY (clickjacking protection)
+X-Content-Type-Options: nosniff
+X-XSS-Protection: enabled
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: Restricts dangerous browser features
+X-Download-Options: noopen
+X-Permitted-Cross-Domain-Policies: none
+```
 
-8. **Keep dependencies updated**
-   ```bash
-   npm audit fix
-   ```
+**Request Protection**
+
+- ✅ 1MB request size limit (DoS protection)
+- ✅ 100 parameter limit
+- ✅ Strict JSON parsing
+- ✅ CSRF double-submit cookie pattern
+
+**Rate Limiting**
+
+- ✅ Global: 100 req/min per IP
+- ✅ Login: 10 attempts/15min per email
+- ✅ Registration: 3 accounts/hour per IP
+- ✅ Token refresh: 10 req/min per IP
+- ✅ Socket.io: 100 msg/min per socket
+
+#### 📊 Monitoring & Auditing
+
+**Audit Events Tracked**
+
+- User registration & login attempts
+- Account lockouts & unlocks
+- Password changes
+- Token refresh & revocation
+- Admin actions (user activation/deactivation)
+- Role changes
+- Failed authentication attempts
+
+All events include: timestamp, user ID, IP address, user agent, and metadata.
+
+### Production Deployment Checklist
+
+#### Required: Before Going Live
+
+- [ ] **Generate strong JWT_SECRET** (64+ characters)
+
+  ```bash
+  openssl rand -base64 64
+  ```
+
+- [ ] **Enable HTTPS** with valid SSL/TLS certificate
+
+  ```nginx
+  # Nginx with Let's Encrypt recommended
+  listen 443 ssl http2;
+  ssl_certificate /path/to/fullchain.pem;
+  ssl_certificate_key /path/to/privkey.pem;
+  ```
+
+- [ ] **Configure CORS** with specific origins
+
+  ```env
+  ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+  ```
+
+- [ ] **Use PostgreSQL** (SQLite is development-only)
+
+  ```env
+  DATABASE_URL="postgresql://user:password@localhost:5432/triterm"
+  ```
+
+- [ ] **Set strong session timeouts**
+
+  ```env
+  JWT_EXPIRES_IN=15m
+  JWT_REFRESH_EXPIRES_IN=7d
+  ABSOLUTE_SESSION_TIMEOUT=30d
+  ```
+
+- [ ] **Configure rate limiting**
+  ```env
+  RATE_LIMIT_MAX=50
+  RATE_LIMIT_WINDOW=60000
+  ```
+
+#### Recommended: Enhanced Security
+
+- [ ] **Enable OAuth providers** (reduce password reliance)
+
+  ```env
+  GITHUB_CLIENT_ID=your_github_client_id
+  GITHUB_CLIENT_SECRET=your_github_client_secret
+  ```
+
+- [ ] **Set up automated backups**
+
+  ```bash
+  # Daily backups with 30-day retention
+  0 2 * * * /path/to/triterm/scripts/backup.sh
+  ```
+
+- [ ] **Configure monitoring & alerts**
+
+  ```bash
+  # Prometheus + Grafana stack included
+  docker-compose -f docker-compose.monitoring.yml up -d
+  ```
+
+- [ ] **Review audit logs regularly**
+
+  ```bash
+  # Admin dashboard → Audit Logs
+  # Look for: failed logins, account lockouts, unusual patterns
+  ```
+
+- [ ] **Keep dependencies updated**
+
+  ```bash
+  npm audit
+  npm audit fix
+  npm update
+  ```
+
+- [ ] **Enable user approval for new signups**
+  ```bash
+  # Admin dashboard → System Settings → Disable signup
+  # Manually approve each new user
+  ```
+
+#### Optional: Advanced Hardening
+
+- [ ] **Migrate to Redis** for distributed deployments
+  - Token revocation
+  - Rate limiting
+  - Session management
+  - Login attempt tracking
+
+- [ ] **Implement IP whitelisting** for admin access
+- [ ] **Set up Web Application Firewall (WAF)**
+- [ ] **Enable intrusion detection (fail2ban)**
+- [ ] **Configure security event notifications**
+
+### Security Environment Variables
+
+```env
+# Authentication Security
+JWT_SECRET=<64-character-random-string>
+JWT_EXPIRES_IN=15m                    # Access token lifetime
+JWT_REFRESH_EXPIRES_IN=7d             # Refresh token lifetime
+ABSOLUTE_SESSION_TIMEOUT=30d          # Maximum session duration
+
+# CORS & Network Security
+ALLOWED_ORIGINS=https://yourdomain.com
+CLIENT_URL=https://yourdomain.com
+NODE_ENV=production
+
+# Rate Limiting
+RATE_LIMIT_MAX=50                     # Global rate limit
+RATE_LIMIT_WINDOW=60000               # 1 minute window
+
+# Database
+DATABASE_URL=postgresql://...         # Use PostgreSQL in production
+```
+
+### OWASP Top 10 2021 Compliance
+
+| Risk                                          | Status       | Implementation                                   |
+| --------------------------------------------- | ------------ | ------------------------------------------------ |
+| **A01:2021 – Broken Access Control**          | ✅ Mitigated | RBAC, user approval, token revocation            |
+| **A02:2021 – Cryptographic Failures**         | ✅ Mitigated | httpOnly cookies, bcrypt, secure tokens          |
+| **A03:2021 – Injection**                      | ✅ Mitigated | Parameterized queries (Prisma), input validation |
+| **A04:2021 – Insecure Design**                | ✅ Mitigated | Security by design, defense in depth             |
+| **A05:2021 – Security Misconfiguration**      | ✅ Mitigated | Secure defaults, security headers                |
+| **A06:2021 – Vulnerable Components**          | ⚠️ Monitor   | Regular `npm audit`, dependency updates          |
+| **A07:2021 – Identification & Auth Failures** | ✅ Mitigated | Account lockout, strong passwords, MFA-ready     |
+| **A08:2021 – Software & Data Integrity**      | ✅ Mitigated | Audit logging, JWT signatures                    |
+| **A09:2021 – Security Logging Failures**      | ✅ Mitigated | Comprehensive audit logs, monitoring             |
+| **A10:2021 – Server-Side Request Forgery**    | N/A          | No server-side requests to user-controlled URLs  |
+
+### Security Incident Response
+
+If you discover a security vulnerability:
+
+1. **DO NOT** open a public GitHub issue
+2. Email security details privately to the maintainers
+3. Include: vulnerability description, reproduction steps, potential impact
+4. Allow reasonable time for patching before public disclosure
+
+### Security Updates
+
+Security patches are released as needed with changelog entries marked `[SECURITY]`. Update immediately when security releases are published:
+
+```bash
+git pull
+npm install
+npx triterm migrate
+npx triterm service restart
+```
 
 ## 🧪 Testing
 
