@@ -269,18 +269,19 @@ function KeyboardSettings() {
       <div>
         <h3 className="text-lg font-semibold mb-2">Keyboard Shortcuts</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Common keyboard shortcuts (not yet customizable)
+          VSCode-style shortcuts using Ctrl+K prefix. Press <kbd className="px-2 py-1 text-xs bg-muted rounded border">Ctrl+K</kbd>, release Ctrl, then press the second key. (Not yet customizable)
         </p>
         <div className="space-y-3">
           {[
-            { action: 'New Terminal', shortcut: 'Ctrl+Shift+N' },
-            { action: 'Close Terminal', shortcut: 'Ctrl+Shift+W' },
-            { action: 'Next Terminal', shortcut: 'Ctrl+Tab' },
-            { action: 'Previous Terminal', shortcut: 'Ctrl+Shift+Tab' },
-            { action: 'Clear Terminal', shortcut: 'Ctrl+L' },
+            { action: 'New Terminal', shortcut: 'Ctrl+K, N' },
+            { action: 'Close Terminal', shortcut: 'Ctrl+K, W' },
+            { action: 'Next Terminal', shortcut: 'Ctrl+K, → or ]' },
+            { action: 'Previous Terminal', shortcut: 'Ctrl+K, ← or [' },
+            { action: 'Clear Terminal', shortcut: 'Ctrl+K, K' },
+            { action: 'Settings', shortcut: 'Ctrl+K, S' },
+            { action: 'Find', shortcut: 'Ctrl+K, F' },
             { action: 'Copy', shortcut: 'Ctrl+Shift+C' },
             { action: 'Paste', shortcut: 'Ctrl+Shift+V' },
-            { action: 'Find', shortcut: 'Ctrl+Shift+F' },
           ].map((item) => (
             <div
               key={item.action}
