@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma.js';
 import { requireAdmin } from '../middleware/rbac.js';
 import { logAuditEvent } from '../lib/auditLogger.js';
 import { revokeAllUserTokens } from '../lib/tokenRevocation.js';
+import { adminCreateUserSchema } from '../lib/validation.js';
+import bcrypt from 'bcrypt';
 import os from 'os';
 
 const router = express.Router();
@@ -35,6 +37,91 @@ router.get('/users', async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+/**
+ * POST /api/admin/users
+ * Create a new user (admin only)
+ */
+router.post('/users', async (req, res) => {
+  try {
+    // Validate input
+    const validationResult = adminCreateUserSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      const errorMessages = validationResult.error.issues.map(issue => issue.message);
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: errorMessages,
+      });
+    }
+
+    const { email, username, password, role, isActive } = validationResult.data;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }],
+      },
+    });
+
+    if (existingUser) {
+      if (existingUser.email.toLowerCase() === email.toLowerCase()) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+      if (existingUser.username.toLowerCase() === username.toLowerCase()) {
+        return res.status(409).json({ error: 'Username already taken' });
+      }
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        username,
+        password: hashedPassword,
+        role,
+        isActive,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Log the action
+    await logAuditEvent({
+      userId: req.user!.userId,
+      action: 'CREATE_USER',
+      resource: `user:${user.id}`,
+      ipAddress: req.ip || null,
+      userAgent: req.get('user-agent') || null,
+      metadata: {
+        createdUserId: user.id,
+        createdUsername: user.username,
+        createdEmail: user.email,
+        assignedRole: role,
+        isActive,
+        createdBy: 'admin',
+      },
+    });
+
+    res.status(201).json(user);
+  } catch (error: any) {
+    console.error('Error creating user:', error);
+    if (error.code === 'P2002') {
+      // Unique constraint violation
+      return res.status(409).json({ error: 'User with this email or username already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 

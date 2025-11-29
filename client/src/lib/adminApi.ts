@@ -118,6 +118,21 @@ export async function getAllUsers(): Promise<User[]> {
   return fetchWithAuth(`${API_URL}/admin/users`);
 }
 
+export interface CreateUserInput {
+  email: string;
+  username: string;
+  password: string;
+  role: 'USER' | 'ADMIN';
+  isActive: boolean;
+}
+
+export async function createUser(input: CreateUserInput): Promise<User> {
+  return fetchWithAuth(`${API_URL}/admin/users`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function updateUserRole(userId: string, role: 'USER' | 'ADMIN'): Promise<User> {
   return fetchWithAuth(`${API_URL}/admin/users/${userId}`, {
     method: 'PATCH',

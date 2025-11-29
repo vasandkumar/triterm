@@ -17,6 +17,14 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -27,9 +35,11 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Badge } from '../../components/ui/badge';
-import { Users, Shield, UserX, AlertCircle, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
-import { getAllUsers, updateUserRole, deleteUser, activateUser, deactivateUser } from '../../lib/adminApi';
-import type { User } from '../../lib/adminApi';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Users, Shield, UserX, AlertCircle, RefreshCw, CheckCircle, XCircle, UserPlus } from 'lucide-react';
+import { getAllUsers, updateUserRole, deleteUser, activateUser, deactivateUser, createUser } from '../../lib/adminApi';
+import type { User, CreateUserInput } from '../../lib/adminApi';
 import { useAuth } from '../../contexts/AuthContext';
 
 export function UserManagement() {
@@ -41,6 +51,16 @@ export function UserManagement() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [togglingStatus, setTogglingStatus] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createFormData, setCreateFormData] = useState<CreateUserInput>({
+    email: '',
+    username: '',
+    password: '',
+    role: 'USER',
+    isActive: true,
+  });
+  const [createErrors, setCreateErrors] = useState<string[]>([]);
 
   useEffect(() => {
     loadUsers();
@@ -125,6 +145,52 @@ export function UserManagement() {
     return new Date(date).toLocaleString();
   };
 
+  const openCreateDialog = () => {
+    setCreateFormData({
+      email: '',
+      username: '',
+      password: '',
+      role: 'USER',
+      isActive: true,
+    });
+    setCreateErrors([]);
+    setCreateDialogOpen(true);
+  };
+
+  const handleCreateUser = async () => {
+    try {
+      setCreateErrors([]);
+      setCreating(true);
+
+      const newUser = await createUser(createFormData);
+      setUsers([newUser, ...users]);
+      setCreateDialogOpen(false);
+      setCreateFormData({
+        email: '',
+        username: '',
+        password: '',
+        role: 'USER',
+        isActive: true,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
+
+      // Parse validation errors if they exist
+      if (errorMessage.includes('Validation failed')) {
+        try {
+          const errorData = JSON.parse(errorMessage.split('Validation failed: ')[1] || '[]');
+          setCreateErrors(errorData.map((e: any) => e.message || e));
+        } catch {
+          setCreateErrors([errorMessage]);
+        }
+      } else {
+        setCreateErrors([errorMessage]);
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -174,10 +240,16 @@ export function UserManagement() {
                 Manage user accounts and permissions ({users.length} total)
               </CardDescription>
             </div>
-            <Button onClick={loadUsers} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={openCreateDialog} variant="default" size="sm">
+                <UserPlus className="h-4 w-4 mr-2" />
+                Create User
+              </Button>
+              <Button onClick={loadUsers} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -306,6 +378,143 @@ export function UserManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Create New User
+            </DialogTitle>
+            <DialogDescription>
+              Create a new user account. The user will be able to login immediately if active.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {createErrors.length > 0 && (
+              <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-destructive">Validation errors:</p>
+                    <ul className="list-disc list-inside text-sm text-destructive mt-1">
+                      {createErrors.map((error, index) => (
+                        <li key={index}>{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="user@example.com"
+                value={createFormData.email}
+                onChange={(e) => setCreateFormData({ ...createFormData, email: e.target.value })}
+                disabled={creating}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="johndoe"
+                value={createFormData.username}
+                onChange={(e) => setCreateFormData({ ...createFormData, username: e.target.value })}
+                disabled={creating}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Min 12 chars, uppercase, lowercase, number, special"
+                value={createFormData.password}
+                onChange={(e) => setCreateFormData({ ...createFormData, password: e.target.value })}
+                disabled={creating}
+              />
+              <p className="text-xs text-muted-foreground">
+                Min 12 characters with uppercase, lowercase, number, and special character
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={createFormData.role}
+                onValueChange={(value: 'USER' | 'ADMIN') =>
+                  setCreateFormData({ ...createFormData, role: value })
+                }
+                disabled={creating}
+              >
+                <SelectTrigger id="role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USER">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      User
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="ADMIN">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Admin
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="isActive"
+                type="checkbox"
+                checked={createFormData.isActive}
+                onChange={(e) => setCreateFormData({ ...createFormData, isActive: e.target.checked })}
+                disabled={creating}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="isActive" className="cursor-pointer">
+                Active (user can login immediately)
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateDialogOpen(false)}
+              disabled={creating}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateUser} disabled={creating}>
+              {creating ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Create User
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
