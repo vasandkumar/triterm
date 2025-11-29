@@ -57,10 +57,12 @@ TriTerm brings the power of your terminal to the browser with enterprise feature
 ### Admin Dashboard
 
 - ✅ **System overview** with real-time statistics
-- ✅ **User management** (create, update, delete, role assignment)
+- ✅ **User management** (create users directly, update roles, activate/deactivate, delete)
+- ✅ **User approval system** - Approve or reject pending registrations
 - ✅ **Session monitoring** - Track active terminal sessions
 - ✅ **Audit log viewer** - Security event tracking
 - ✅ **System metrics** - CPU, memory, uptime monitoring
+- ✅ **System settings** - Toggle public signup on/off
 
 ### Developer Experience
 
@@ -516,7 +518,8 @@ TriTerm implements enterprise-grade security measures aligned with OWASP Top 10 
 **Account Protection**
 
 - ✅ Account lockout: 5 failed attempts = 15 min lockout
-- ✅ User approval system (admin-controlled)
+- ✅ User approval system (admin-controlled registration)
+- ✅ Admin user creation (admins can create users directly)
 - ✅ Generic error messages (prevents user enumeration)
 - ✅ Comprehensive audit logging
 
@@ -559,7 +562,7 @@ X-Permitted-Cross-Domain-Policies: none
 - Account lockouts & unlocks
 - Password changes
 - Token refresh & revocation
-- Admin actions (user activation/deactivation)
+- Admin actions (user creation/activation/deactivation)
 - Role changes
 - Failed authentication attempts
 

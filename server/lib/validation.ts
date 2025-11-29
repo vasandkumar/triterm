@@ -63,7 +63,21 @@ export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
+// Admin user creation schema (includes role selection)
+export const adminCreateUserSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(20, 'Username must be at most 20 characters')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens'),
+  password: passwordValidator,
+  role: z.enum(['USER', 'ADMIN']),
+  isActive: z.boolean().default(true),
+});
+
 // Types inferred from schemas
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
+export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>;
