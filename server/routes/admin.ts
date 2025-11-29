@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireAdmin } from '../middleware/rbac.js';
 import { logAuditEvent } from '../lib/auditLogger.js';
+import { revokeAllUserTokens } from '../lib/tokenRevocation.js';
 import os from 'os';
 
 const router = express.Router();
@@ -116,6 +117,9 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Revoke all active tokens for this user before deletion
+    const revokedTokenCount = revokeAllUserTokens(id, 'admin_action');
+
     // Delete user (cascades to sessions, recordings, audit logs)
     await prisma.user.delete({
       where: { id },
@@ -132,6 +136,7 @@ router.delete('/users/:id', async (req, res) => {
         deletedUserId: id,
         deletedUsername: user.username,
         deletedEmail: user.email,
+        tokensRevoked: revokedTokenCount,
       },
     });
 
@@ -397,6 +402,9 @@ router.patch('/users/:id/deactivate', async (req, res) => {
       },
     });
 
+    // Revoke all active tokens for this user (immediate logout)
+    const revokedTokenCount = revokeAllUserTokens(id, 'user_deactivated');
+
     // Log the action
     await logAuditEvent({
       userId: req.user!.userId,
@@ -408,6 +416,7 @@ router.patch('/users/:id/deactivate', async (req, res) => {
         targetUserId: id,
         targetUsername: user.username,
         targetEmail: user.email,
+        tokensRevoked: revokedTokenCount,
       },
     });
 
