@@ -19,7 +19,8 @@ import {
   registerRateLimiter,
   tokenRefreshRateLimiter,
 } from '../middleware/rateLimiter.js';
-import { setAuthCookies, clearAuthCookies, getRefreshTokenFromCookies } from '../lib/authCookies.js';
+import { setAuthCookies, clearAuthCookies, getRefreshTokenFromCookies, getAccessTokenFromCookies } from '../lib/authCookies.js';
+import { revokeToken } from '../lib/tokenRevocation.js';
 
 const router = Router();
 
@@ -513,20 +514,47 @@ router.get('/me', async (req: Request, res: Response) => {
  */
 router.post('/logout', async (req: Request, res: Response) => {
   try {
-    let token: string | undefined;
+    let accessToken: string | undefined;
+    let refreshToken: string | undefined;
 
-    // Try to get token from cookie or header
-    token = getAccessTokenFromCookies(req.cookies || {});
-    if (!token) {
+    // Try to get access token from cookie or header
+    accessToken = getAccessTokenFromCookies(req.cookies || {});
+    if (!accessToken) {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
+        accessToken = authHeader.substring(7);
       }
     }
 
-    if (token) {
+    // Get refresh token from cookie
+    refreshToken = getRefreshTokenFromCookies(req.cookies || {});
+
+    if (accessToken) {
       try {
-        const payload = verifyToken(token);
+        const payload = verifyToken(accessToken);
+
+        // Revoke access token
+        revokeToken(
+          accessToken,
+          payload.userId,
+          new Date(payload.exp * 1000), // Convert Unix timestamp to Date
+          'logout'
+        );
+
+        // Revoke refresh token if present
+        if (refreshToken) {
+          try {
+            const refreshPayload = verifyToken(refreshToken);
+            revokeToken(
+              refreshToken,
+              refreshPayload.userId,
+              new Date(refreshPayload.exp * 1000),
+              'logout'
+            );
+          } catch {
+            // Refresh token invalid, ignore
+          }
+        }
 
         // Log audit event
         await logAuditEvent({
@@ -537,10 +565,14 @@ router.post('/logout', async (req: Request, res: Response) => {
           userAgent: getUserAgent(req) || null,
           metadata: {
             username: payload.username,
+            tokensRevoked: refreshToken ? 2 : 1,
           },
         });
 
-        logger.info('User logged out', { userId: payload.userId });
+        logger.info('User logged out', {
+          userId: payload.userId,
+          tokensRevoked: refreshToken ? 2 : 1,
+        });
       } catch {
         // Invalid token, ignore but still clear cookies
       }

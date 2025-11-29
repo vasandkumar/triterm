@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JWTPayload } from '../lib/jwt.js';
 import { getAccessTokenFromCookies } from '../lib/authCookies.js';
+import { isTokenRevoked } from '../lib/tokenRevocation.js';
 import logger from '../config/logger.js';
 
 // Extend Express Request type to include user
@@ -39,6 +40,16 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     // Verify token
     const payload = verifyToken(token);
 
+    // Check if token has been revoked
+    if (isTokenRevoked(token)) {
+      logger.warn('Revoked token access attempted', {
+        userId: payload.userId,
+        path: req.path,
+      });
+      res.status(401).json({ error: 'Token has been revoked' });
+      return;
+    }
+
     // Attach user to request
     req.user = payload;
 
@@ -75,7 +86,11 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
 
     if (token) {
       const payload = verifyToken(token);
-      req.user = payload;
+
+      // Check if token has been revoked (silently skip for optional auth)
+      if (!isTokenRevoked(token)) {
+        req.user = payload;
+      }
     }
   } catch (error) {
     // Silently ignore authentication errors for optional auth
