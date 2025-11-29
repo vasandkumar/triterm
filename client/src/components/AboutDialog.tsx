@@ -125,12 +125,22 @@ export function AboutDialog({ open, onOpenChange }) {
 
           {/* Links */}
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 gap-2" size="sm">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              size="sm"
+              onClick={() => window.open('https://github.com/vasandkumar/triterm', '_blank')}
+            >
               <Github className="h-4 w-4" />
               GitHub
               <ExternalLink className="h-3 w-3 ml-auto" />
             </Button>
-            <Button variant="outline" className="flex-1 gap-2" size="sm">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              size="sm"
+              onClick={() => window.open('https://github.com/vasandkumar/triterm#readme', '_blank')}
+            >
               <Users className="h-4 w-4" />
               Documentation
               <ExternalLink className="h-3 w-3 ml-auto" />
