@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.6.0...triterm-v1.0.0) (2025-11-29)
+## [0.7.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.6.0...triterm-v0.7.0) (2025-11-29)
 
 
 ### ⚠ BREAKING CHANGES
