@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.6.0...triterm-v0.7.0) (2025-11-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* userTerminalRegistry methods are now async and return Promises. All callers must use await. This enables distributed state management across multiple server instances.
+
+### Features
+
+* implement hybrid Redis session storage for horizontal scaling ([#15](https://github.com/vasandkumar/triterm/issues/15)) ([3beeee5](https://github.com/vasandkumar/triterm/commit/3beeee5223667eb4173574cee00d1348069a9763))
+
 ## [0.6.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.5.0...triterm-v0.6.0) (2025-11-29)
 
 
