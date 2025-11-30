@@ -25,6 +25,8 @@ import {
   deactivateSession,
   deleteSession,
   cleanupOldSessions,
+  getUserActiveSessions,
+  getSession,
 } from './lib/terminalSession.js';
 import { initializeOAuthProviders } from './lib/oauthProviders.js';
 import { setupCollaborationHandlers, setupPresenceCleanup } from './lib/collaborationHandlers.js';
@@ -48,7 +50,8 @@ interface TerminalSession {
   createdAt: number;
   outputBuffer: string[]; // Store recent output for session recovery
   lastActivityAt: number;
-  shareUserSockets?: string[]; // External share users' socket IDs
+  shareUserSockets: string[]; // External share users' socket IDs
+  connectedSockets: Set<string>; // All connected sockets (multi-device support)
 }
 
 interface CreateTerminalData {
@@ -255,11 +258,12 @@ app.use(
   })
 );
 
-// Rate limiting
+// Rate limiting (disabled in development for convenience)
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW || '60000'),
   max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
   message: 'Too many requests from this IP, please try again later.',
+  skip: () => process.env.NODE_ENV !== 'production', // Skip rate limiting in development
 });
 
 app.use(limiter);
@@ -343,7 +347,6 @@ const SESSION_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
 // Authentication middleware for Socket.io
 io.use((socket, next) => {
   const requireAuth = process.env.REQUIRE_AUTH === 'true';
-  const token = socket.handshake.auth.token;
   const deviceId = socket.handshake.auth.deviceId;
   const deviceName = socket.handshake.auth.deviceName;
 
@@ -352,6 +355,28 @@ io.use((socket, next) => {
     deviceId,
     deviceName,
   };
+
+  // Try to get token from multiple sources:
+  // 1. socket.handshake.auth.token (sent by client - legacy/fallback)
+  // 2. httpOnly cookie (primary method - more secure)
+  let token = socket.handshake.auth.token;
+
+  if (!token) {
+    // Parse cookies from handshake headers
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (cookieHeader) {
+      const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        if (key && value) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+
+      // Get token from httpOnly cookie
+      token = cookies['triterm_access_token'];
+    }
+  }
 
   // If token is provided, always try to authenticate (even if not required)
   if (token) {
@@ -371,6 +396,7 @@ io.use((socket, next) => {
         username: payload.username,
         deviceId,
         deviceName,
+        authMethod: socket.handshake.auth.token ? 'auth-header' : 'cookie',
       });
 
       next();
@@ -447,9 +473,8 @@ async function verifyTerminalOwnership(
     return false;
   }
 
-  // If authentication is required, verify user ownership
-  const requireAuth = process.env.REQUIRE_AUTH === 'true';
-  if (requireAuth && socket.data.user) {
+  // For authenticated users: verify the terminal belongs to this user
+  if (terminal.userId && socket.data.user) {
     if (terminal.userId !== socket.data.user.userId) {
       logger.warn('Terminal ownership verification failed: user mismatch', {
         terminalId,
@@ -459,21 +484,12 @@ async function verifyTerminalOwnership(
       });
       return false;
     }
+    // User ID matches - allow access (simplified check, no registry lookup needed)
+    return true;
   }
 
-  // For authenticated users, check if socket is registered for this terminal
-  if (terminal.userId && terminalId) {
-    const isConnected = await userTerminalRegistry.isSocketConnected(terminal.userId, terminalId, socket.id);
-    if (!isConnected) {
-      logger.warn('Terminal ownership verification failed: socket not in registry', {
-        terminalId,
-        socketId: socket.id,
-        userId: terminal.userId,
-      });
-      return false;
-    }
-  } else {
-    // For non-authenticated users, fall back to primary socket check
+  // For non-authenticated terminals: check socket ID matches
+  if (!terminal.userId) {
     if (terminal.socketId !== socket.id) {
       logger.warn('Terminal ownership verification failed: socket mismatch (non-authenticated)', {
         terminalId,
@@ -589,6 +605,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         outputBuffer: [],
         lastActivityAt: Date.now(),
         shareUserSockets: [], // External share users
+        connectedSockets: new Set([socket.id]), // Track all connected sockets
       });
 
       // Update terminal count
@@ -677,27 +694,20 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
           // Update last activity
           terminal.lastActivityAt = Date.now();
 
-          // Collect all sockets to broadcast to (owner + external share users)
-          const targetSockets: string[] = [];
+          // Broadcast to ALL connected sockets (simple, reliable approach)
+          const targetSockets = new Set<string>();
 
-          // Multi-device: Broadcast to ALL connected sockets for this terminal
-          if (terminal.userId) {
-            const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(terminal.userId, terminalId);
-            if (connectedSockets.length > 0) {
-              // Add owner's connected devices
-              targetSockets.push(...connectedSockets);
-            } else {
-              // Fallback to primary socket if registry is empty
-              targetSockets.push(terminal.socketId);
-            }
-          } else {
-            // For non-authenticated users, use primary socket
-            targetSockets.push(terminal.socketId);
-          }
+          // Add all connected sockets from the terminal's Set
+          terminal.connectedSockets.forEach((sid) => targetSockets.add(sid));
 
           // Add external share users' sockets
           if (terminal.shareUserSockets && terminal.shareUserSockets.length > 0) {
-            targetSockets.push(...terminal.shareUserSockets);
+            terminal.shareUserSockets.forEach((sid) => targetSockets.add(sid));
+          }
+
+          // Fallback: ensure primary socket is included
+          if (targetSockets.size === 0) {
+            targetSockets.add(terminal.socketId);
           }
 
           // Broadcast to all target sockets
@@ -758,6 +768,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // Reconnect to existing terminal (multi-device aware)
+  // If PTY is not running but session exists in DB, spawn a new PTY
   socket.on('reconnect-terminal', async (data, callback) => {
     try {
       const { terminalId } = data;
@@ -780,17 +791,156 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         availableTerminals: Array.from(terminals.keys()),
       });
 
-      const terminal = terminals.get(terminalId);
+      let terminal = terminals.get(terminalId);
 
+      // If no PTY running, check if session exists in database and spawn new PTY
       if (!terminal) {
-        logger.error('Terminal not found during reconnection', {
+        const dbSession = await getSession(terminalId);
+
+        if (!dbSession || !dbSession.active) {
+          logger.error('Terminal session not found in database', {
+            terminalId,
+            socketId: socket.id,
+          });
+          callback({ error: 'Terminal not found or has been terminated' });
+          return;
+        }
+
+        // Verify ownership
+        if (userId && dbSession.userId !== userId) {
+          callback({ error: 'Unauthorized: Terminal belongs to another user' });
+          return;
+        }
+
+        logger.info('Spawning new PTY for existing session (multi-device reconnect)', {
           terminalId,
           socketId: socket.id,
-          totalTerminals: terminals.size,
-          availableTerminals: Array.from(terminals.keys()),
+          userId,
+          shell: dbSession.shell,
         });
-        callback({ error: 'Terminal not found or has been terminated' });
-        return;
+
+        // Spawn new PTY process for this session
+        const shell = dbSession.shell || getShell();
+        const cwd = dbSession.cwd || os.homedir();
+        const cols = dbSession.cols || 80;
+        const rows = dbSession.rows || 24;
+
+        const term = pty.spawn(shell, [], {
+          name: 'xterm-256color',
+          cols,
+          rows,
+          cwd,
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
+          },
+        });
+
+        // Store terminal instance
+        terminals.set(terminalId, {
+          term,
+          socketId: socket.id,
+          userId: dbSession.userId || undefined,
+          sessionId: dbSession.id,
+          createdAt: dbSession.createdAt?.getTime() || Date.now(),
+          outputBuffer: [],
+          lastActivityAt: Date.now(),
+          shareUserSockets: [],
+          connectedSockets: new Set([socket.id]),
+        });
+
+        terminal = terminals.get(terminalId)!;
+
+        // Set up output handler
+        term.onData((output) => {
+          const termInstance = terminals.get(terminalId);
+          if (!termInstance) return;
+
+          // Update activity timestamp
+          termInstance.lastActivityAt = Date.now();
+
+          // Buffer output (keep last N chunks for session recovery)
+          termInstance.outputBuffer.push(output);
+          if (termInstance.outputBuffer.length > MAX_BUFFER_LINES) {
+            termInstance.outputBuffer = termInstance.outputBuffer.slice(-MAX_BUFFER_LINES);
+          }
+
+          // Multi-device: Send output to ALL connected devices
+          if (termInstance.userId) {
+            userTerminalRegistry.getSocketsForTerminal(termInstance.userId, terminalId).then((connectedSockets) => {
+              connectedSockets.forEach((sid) => {
+                io.to(sid).emit('terminal-output', { terminalId, data: output });
+              });
+            });
+          } else {
+            io.to(termInstance.socketId).emit('terminal-output', { terminalId, data: output });
+          }
+
+          // Also send to external share users
+          termInstance.shareUserSockets.forEach((sid) => {
+            io.to(sid).emit('terminal-output', { terminalId, data: output });
+          });
+        });
+
+        // Handle terminal exit
+        term.onExit(({ exitCode, signal }) => {
+          logger.info('Terminal exited (respawned)', { terminalId, exitCode, signal });
+
+          const termInstance = terminals.get(terminalId);
+          if (termInstance) {
+            // Multi-device: Notify ALL connected devices
+            if (termInstance.userId) {
+              userTerminalRegistry.getSocketsForTerminal(termInstance.userId, terminalId).then((connectedSockets) => {
+                connectedSockets.forEach((sid) => {
+                  io.to(sid).emit('terminal-exit', { terminalId, exitCode, signal });
+                });
+              });
+            } else {
+              io.to(termInstance.socketId).emit('terminal-exit', { terminalId, exitCode, signal });
+            }
+
+            terminals.delete(terminalId);
+          }
+
+          // Mark session as inactive
+          deactivateSession(terminalId).catch(() => {});
+        });
+
+        // Set up input queue for this terminal
+        const inputQueue = inputQueueManager.getQueue(terminalId);
+        inputQueue.on('process', async (queuedInput, queueCallback) => {
+          try {
+            const termInstance = terminals.get(terminalId);
+            if (!termInstance) {
+              queueCallback(new Error('Terminal not found'));
+              return;
+            }
+            const sanitizedInput = sanitizeInput(queuedInput.input);
+            termInstance.term.write(sanitizedInput);
+            termInstance.lastActivityAt = Date.now();
+
+            // Multi-device: Broadcast input to ALL other connected devices
+            if (termInstance.userId) {
+              const connectedSockets = await userTerminalRegistry.getSocketsForTerminal(termInstance.userId, terminalId);
+              connectedSockets.forEach((sid) => {
+                if (sid !== queuedInput.socketId) {
+                  io.to(sid).emit('terminal-input-received', {
+                    terminalId,
+                    input: queuedInput.input,
+                    sequenceNumber: queuedInput.sequenceNumber,
+                    fromSocketId: queuedInput.socketId,
+                  });
+                }
+              });
+            }
+
+            updateSessionActivity(terminalId).catch(() => {});
+            queueCallback();
+          } catch (error) {
+            queueCallback(error instanceof Error ? error : new Error('Unknown error'));
+          }
+        });
       }
 
       // Verify user ownership for authenticated users
@@ -806,6 +956,15 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       }
 
       // Multi-device: Add this socket to the terminal (don't replace existing connections)
+      // Always add to connectedSockets Set (simple, reliable tracking)
+      terminal.connectedSockets.add(socket.id);
+      logger.info('Added socket to terminal connectedSockets', {
+        terminalId,
+        socketId: socket.id,
+        totalConnected: terminal.connectedSockets.size,
+        allSockets: Array.from(terminal.connectedSockets),
+      });
+
       if (userId && terminal.userId) {
         // Check if socket is already registered
         const isAlreadyConnected = await userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id);
@@ -1035,6 +1194,8 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
   });
 
   // List all terminals for the authenticated user (multi-device support)
+  // Only returns terminals that are currently running in memory (PTY active)
+  // Stale DB sessions are cleaned up, not shown to users
   socket.on('list-terminals', async (callback) => {
     try {
       const userId = socket.data.user?.userId;
@@ -1044,33 +1205,41 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
         return;
       }
 
-      // Get all terminals owned by this user
+      // Only return terminals that are CURRENTLY RUNNING in memory
+      // This is the correct behavior - we can't "reconnect" to a PTY that doesn't exist
+      // DB sessions are for persistence metadata, not for respawning dead terminals
       const userTerminals = [];
 
       for (const [terminalId, terminal] of terminals.entries()) {
-        if (terminal.userId === userId) {
-          const devices = await userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
-          const deviceCount = devices.length;
+        // Only include terminals owned by this user
+        if (terminal.userId !== userId) continue;
 
-          userTerminals.push({
-            terminalId,
-            shell: getShell(),
-            createdAt: terminal.createdAt,
-            lastActivityAt: terminal.lastActivityAt,
-            deviceCount,
-            devices: devices.map(d => ({
-              deviceId: d.deviceId,
-              deviceName: d.deviceName,
-              connectedAt: d.connectedAt,
-            })),
-            isConnectedOnThisDevice: await userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id),
-          });
-        }
+        // Get device info from registry
+        const devices = await userTerminalRegistry.getDevicesForTerminal(userId, terminalId);
+        const deviceCount = devices.length;
+
+        userTerminals.push({
+          terminalId,
+          shell: getShell(),
+          createdAt: terminal.createdAt,
+          lastActivityAt: terminal.lastActivityAt,
+          deviceCount,
+          devices: devices.map(d => ({
+            deviceId: d.deviceId,
+            deviceName: d.deviceName,
+            connectedAt: d.connectedAt,
+          })),
+          // Terminal is "connected on this device" if this socket is registered
+          isConnectedOnThisDevice: await userTerminalRegistry.isSocketConnected(userId, terminalId, socket.id),
+          // PTY is always running since we're iterating in-memory terminals
+          isRunning: true,
+        });
       }
 
       logger.info('Listing terminals for user', {
         userId,
         terminalCount: userTerminals.length,
+        inMemoryCount: userTerminals.length,
         socketId: socket.id,
       });
 
@@ -1876,6 +2045,18 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, 
       totalTerminals: terminals.size,
     });
 
+    // Remove socket from all terminals' connectedSockets Set
+    for (const [terminalId, terminal] of terminals.entries()) {
+      if (terminal.connectedSockets.has(socket.id)) {
+        terminal.connectedSockets.delete(socket.id);
+        logger.info('Removed socket from terminal connectedSockets on disconnect', {
+          terminalId,
+          socketId: socket.id,
+          remainingConnected: terminal.connectedSockets.size,
+        });
+      }
+    }
+
     // Multi-device: Remove this socket from the registry
     if (userId) {
       const affectedTerminals = await userTerminalRegistry.getTerminalsForSocket(socket.id);
@@ -2196,6 +2377,22 @@ startServer().catch((error) => {
 // Schedule cleanup of old/inactive sessions
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
 const INACTIVE_HOURS = 24; // Delete sessions inactive for 24 hours
+
+// On server startup, mark ALL sessions as inactive
+// PTY processes don't survive server restarts, so all old sessions are stale
+(async () => {
+  try {
+    const result = await prisma.session.updateMany({
+      where: { active: true },
+      data: { active: false },
+    });
+    logger.info('Marked all previous sessions as inactive on startup', {
+      count: result.count,
+    });
+  } catch (error) {
+    logger.error('Error marking sessions inactive on startup', { error });
+  }
+})();
 
 // Run cleanup immediately on startup
 cleanupOldSessions(INACTIVE_HOURS).catch((error) => {

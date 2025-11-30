@@ -8,7 +8,7 @@ import {
   logout as logoutApi,
   getCurrentUser,
 } from '../lib/authApi';
-import { saveTokens, clearTokens, isAuthenticated as checkAuth } from '../lib/tokenStorage';
+import { clearTokens } from '../lib/tokenStorage';
 
 interface AuthContextValue {
   user: User | null;
@@ -28,17 +28,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load user on mount if authenticated
+  // Load user on mount - relies on httpOnly cookies being sent automatically
   useEffect(() => {
     async function loadUser() {
-      if (checkAuth()) {
-        try {
-          const currentUser = await getCurrentUser();
-          setUser(currentUser);
-        } catch (err) {
-          console.error('Failed to load user:', err);
-          clearTokens();
-        }
+      try {
+        // Try to get current user - cookies are sent automatically with withCredentials: true
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (err) {
+        // User is not authenticated or token expired - this is expected on first visit
+        // Clear any legacy localStorage tokens
+        clearTokens();
       }
       setLoading(false);
     }

@@ -13,11 +13,22 @@ export const ACCESS_TOKEN_COOKIE = 'triterm_access_token';
 export const REFRESH_TOKEN_COOKIE = 'triterm_refresh_token';
 
 // Cookie configuration
-const COOKIE_CONFIG = {
+// In development, we need 'lax' sameSite and no domain restriction for cross-port/cross-device access
+const isDev = process.env.NODE_ENV !== 'production';
+
+const COOKIE_CONFIG: {
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'strict' | 'lax' | 'none';
+  path: string;
+} = {
   httpOnly: true, // Cannot be accessed by JavaScript (prevents XSS)
-  secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-  sameSite: 'strict' as const, // CSRF protection
+  secure: !isDev, // HTTPS only in production
+  // 'lax' allows cookies on same-site navigations (needed for cross-port dev setup)
+  // 'strict' in production for maximum CSRF protection
+  sameSite: isDev ? 'lax' : 'strict',
   path: '/', // Available for all routes
+  // Note: Don't set 'domain' - let browser use the request domain automatically
 };
 
 // Token expiration times (matching JWT expiration)

@@ -466,13 +466,20 @@ router.post('/refresh', tokenRefreshRateLimiter, async (req: Request, res: Respo
  */
 router.get('/me', async (req: Request, res: Response) => {
   try {
-    // Get token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+    // Try to get token from httpOnly cookie first, then fall back to Authorization header
+    let token = getAccessTokenFromCookies(req.cookies || {});
+
+    if (!token) {
+      // Fallback to Authorization header for API clients
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
-    const token = authHeader.substring(7);
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
 
     // Verify token
     const payload = verifyToken(token);
