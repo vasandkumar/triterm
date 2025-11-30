@@ -74,8 +74,12 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config;
 
+    // Skip refresh logic for auth endpoints to prevent infinite loops
+    const isAuthEndpoint = originalRequest?.url?.includes('/api/auth/');
+
     // If 401, try to refresh token (cookies-based)
-    if (error.response?.status === 401 && originalRequest && !originalRequest.headers['X-Retry']) {
+    // But skip for auth endpoints (login, register, me, refresh) to avoid loops
+    if (error.response?.status === 401 && originalRequest && !originalRequest.headers['X-Retry'] && !isAuthEndpoint) {
       try {
         // Call refresh endpoint (refresh token sent automatically via httpOnly cookie)
         await axios.post(
@@ -89,9 +93,9 @@ api.interceptors.response.use(
         originalRequest.headers['X-Retry'] = 'true';
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, clear any localStorage tokens and redirect to login
+        // Refresh failed, clear any localStorage tokens
+        // Don't redirect - let the app handle showing the login page
         clearTokens();
-        window.location.href = '/';
         return Promise.reject(refreshError);
       }
     }
