@@ -1,11 +1,6 @@
 # Changelog
 
-## [1.0.0](https://github.com/vasandkumar/triterm/compare/triterm-v0.7.0...triterm-v1.0.0) (2025-11-30)
-
-
-### ⚠ BREAKING CHANGES
-
-* userTerminalRegistry methods are now async and return Promises. All callers must use await. This enables distributed state management across multiple server instances.
+## [0.7.1](https://github.com/vasandkumar/triterm/compare/triterm-v0.7.0...triterm-v0.7.1) (2025-11-30)
 
 ### Bug Fixes
 
